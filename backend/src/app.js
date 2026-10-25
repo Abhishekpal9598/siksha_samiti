@@ -85,7 +85,8 @@ const getApiOverview = (req, res) => {
       competitions: `${config.apiPrefix}/competitions`,
       studentRegistrations: `${config.apiPrefix}/me/registrations`,
       studentAttempts: `${config.apiPrefix}/attempts`,
-      admin: `${config.apiPrefix}/admin`
+      admin: `${config.apiPrefix}/admin`,
+      omrHealth: `${config.apiPrefix}/admin/omr/health`
     }
   });
 };

@@ -29,6 +29,7 @@ import {
   requireAdminOrHead, 
   requireCommitteeHead 
 } from '../middlewares/auth.middleware.js';
+import { checkOmrServiceHealth } from '../services/omrClient.service.js';
 
 const router = Router();
 
@@ -64,5 +65,19 @@ router.post('/competitions/:id/reject', requireCommitteeHead, rejectResultsHandl
 router.post('/competitions/:id/publish', requireCommitteeHead, publishResultsHandler);
 router.post('/competitions/:id/unpublish', requireCommitteeHead, unpublishResultsHandler);
 router.patch('/competitions/:id/public-merit-list', requireCommitteeHead, togglePublicMeritListHandler);
+
+// Phase 6: OMR Service Foundation & Health Check
+router.get('/omr/health', async (req, res, next) => {
+  try {
+    const diagnostic = await checkOmrServiceHealth();
+    const statusCode = diagnostic.status === 'HEALTHY' ? 200 : 503;
+    res.status(statusCode).json({
+      success: diagnostic.status === 'HEALTHY',
+      diagnostic
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

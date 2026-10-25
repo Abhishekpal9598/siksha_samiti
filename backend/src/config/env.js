@@ -21,7 +21,10 @@ export const config = {
   bodyLimit: process.env.BODY_LIMIT || '1mb',
   jwtSecret: process.env.JWT_SECRET || 'dev_secret_key_change_in_production_education_committee_2026',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  cookieName: process.env.COOKIE_NAME || 'auth_token'
+  cookieName: process.env.COOKIE_NAME || 'auth_token',
+  omrServiceUrl: process.env.OMR_SERVICE_URL || 'http://127.0.0.1:8001',
+  omrInternalKey: process.env.OMR_INTERNAL_KEY || 'edu_omr_internal_secret_key_2026',
+  omrStorageDir: process.env.OMR_STORAGE_DIR || path.resolve(__dirname, '../../storage/omr_private')
 };
 
 // Safe origins parser
