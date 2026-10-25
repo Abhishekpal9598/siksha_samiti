@@ -68,14 +68,18 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['student', 'admin'],
-        message: 'Role must be either student or admin'
+        values: ['student', 'admin', 'committee_head'],
+        message: 'Role must be student, admin, or committee_head'
       },
       default: 'student'
     },
     isActive: {
       type: Boolean,
       default: true
+    },
+    tokenVersion: {
+      type: Number,
+      default: 0
     }
   },
   {

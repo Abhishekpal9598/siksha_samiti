@@ -1,11 +1,13 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { config } from '../config/env.js';
 import { User } from '../models/user.model.js';
+import { RevokedToken } from '../models/revokedToken.model.js';
 
 /**
  * Authentication Middleware:
  * Validates session token from HttpOnly cookie or Authorization Bearer header.
- * Rejects expired, invalid, missing, or inactive accounts.
+ * Verifies token signature, expiration, active status, server-side revocation list, and tokenVersion.
  */
 export const authenticate = async (req, res, next) => {
   try {
@@ -30,7 +32,21 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // 2. Verify JWT signature & expiration
+    // 2. Check Server-Side Revocation (Blacklist)
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const isRevoked = await RevokedToken.exists({ tokenHash });
+    if (isRevoked) {
+      return res.status(401).json({
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'This session has been logged out and is no longer valid. Please log in again.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // 3. Verify JWT signature & expiration
     let decoded;
     try {
       decoded = jwt.verify(token, config.jwtSecret);
@@ -47,7 +63,7 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // 3. Find user in database
+    // 4. Find user in database
     const user = await User.findById(decoded.userId);
     if (!user) {
       return res.status(401).json({
@@ -60,7 +76,7 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // 4. Reject inactive accounts
+    // 5. Reject inactive accounts
     if (!user.isActive) {
       return res.status(403).json({
         error: {
@@ -72,8 +88,27 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // 5. Attach safe user to request
+    // 6. Check tokenVersion (invalidates all older tokens if password rotated)
+    if (
+      decoded.tokenVersion !== undefined &&
+      user.tokenVersion !== undefined &&
+      decoded.tokenVersion !== user.tokenVersion
+    ) {
+      return res.status(401).json({
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'Session has been invalidated due to a security update or password rotation. Please log in again.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // 7. Attach safe user & token info to request
     req.user = user;
+    req.token = token;
+    req.tokenHash = tokenHash;
+    req.tokenExp = decoded.exp;
     next();
   } catch (error) {
     next(error);
@@ -115,3 +150,5 @@ export const requireRole = (...roles) => {
 // Convenience role helpers
 export const requireAdmin = requireRole('admin');
 export const requireStudent = requireRole('student');
+export const requireCommitteeHead = requireRole('committee_head');
+export const requireAdminOrHead = requireRole('admin', 'committee_head');

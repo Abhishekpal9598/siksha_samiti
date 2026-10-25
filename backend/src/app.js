@@ -5,9 +5,14 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { config, getAllowedOrigins } from './config/env.js';
 import { requestIdMiddleware } from './middlewares/requestId.js';
+import { csrfProtection } from './middlewares/csrf.middleware.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import competitionRoutes from './routes/competition.routes.js';
+import registrationRoutes from './routes/registration.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import attemptRoutes from './routes/attempt.routes.js';
 
 const app = express();
 
@@ -20,7 +25,7 @@ app.use(cookieParser());
 // 3. Security headers via Helmet
 app.use(helmet());
 
-// 3. CORS configuration
+// 4. CORS configuration
 const allowedOrigins = getAllowedOrigins();
 app.use(
   cors({
@@ -30,15 +35,18 @@ app.use(
       if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         return callback(null, true);
       }
-      return callback(new Error(`Origin ${origin} not allowed by CORS policy`), false);
+      const err = new Error(`Origin ${origin} not allowed by CORS policy`);
+      err.statusCode = 403;
+      err.code = 'CORS_ERROR';
+      return callback(err, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-CSRF-Token', 'X-Requested-With']
   })
 );
 
-// 4. Rate limiting
+// 5. Rate limiting
 const limiter = rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMax,
@@ -55,15 +63,45 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// 5. Body parser with strict size limit
+// 6. Body parser with strict size limit
 app.use(express.json({ limit: config.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
 
-// 6. Base Routes
+// 7. CSRF Protection for cookie-authenticated state changes
+app.use(csrfProtection);
+
+// 8. Root & Base Routes
+const getApiOverview = (req, res) => {
+  res.status(200).json({
+    success: true,
+    name: 'Education Committee Competition Management System API',
+    version: '1.0.0',
+    status: 'ONLINE',
+    message: 'Backend API service is running successfully. Web frontend portal is available at http://localhost:5174',
+    frontendUrl: 'http://localhost:5174',
+    endpoints: {
+      health: `${config.apiPrefix}/health`,
+      auth: `${config.apiPrefix}/auth`,
+      competitions: `${config.apiPrefix}/competitions`,
+      studentRegistrations: `${config.apiPrefix}/me/registrations`,
+      studentAttempts: `${config.apiPrefix}/attempts`,
+      admin: `${config.apiPrefix}/admin`
+    }
+  });
+};
+
+app.get('/', getApiOverview);
+app.get(config.apiPrefix, getApiOverview);
+app.get(`${config.apiPrefix}/`, getApiOverview);
+
 app.use(config.apiPrefix, healthRoutes);
 app.use(`${config.apiPrefix}/auth`, authRoutes);
+app.use(`${config.apiPrefix}/competitions`, competitionRoutes);
+app.use(`${config.apiPrefix}/me`, registrationRoutes);
+app.use(`${config.apiPrefix}/attempts`, attemptRoutes);
+app.use(`${config.apiPrefix}/admin`, adminRoutes);
 
-// 7. 404 & Centralized Error Handlers
+// 9. 404 & Centralized Error Handlers
 app.use(notFoundHandler);
 app.use(errorHandler);
 
