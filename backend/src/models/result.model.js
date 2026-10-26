@@ -175,7 +175,7 @@ resultSchema.index({ competitionId: 1, finalScore: -1 });
 resultSchema.methods.toStudentJSON = function (competitionTitle = '', isPublicMeritListEnabled = false) {
   return {
     id: this._id.toString(),
-    competitionId: this.competitionId.toString(),
+    competitionId: (this.competitionId?._id || this.competitionId).toString(),
     competitionTitle: competitionTitle || undefined,
     isPublicMeritListEnabled: Boolean(isPublicMeritListEnabled),
     rollNumber: this.rollNumber,

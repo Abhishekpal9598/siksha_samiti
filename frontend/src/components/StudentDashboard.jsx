@@ -5,53 +5,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000
 export default function StudentDashboard({ user, onLogout, lang, setLang, t, onStartExam }) {
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const isPreview = typeof window !== 'undefined' && Boolean(new URLSearchParams(window.location.search).get('preview') || new URLSearchParams(window.location.search).get('view'));
-
-  const demoComp = {
-    id: 'demo-comp-01',
-    title: 'वार्षिक विज्ञान एवं गणित प्रतिभा खोज परीक्षा 2026',
-    titleEn: 'Annual Science & Mathematics Talent Search 2026',
-    description: 'राज्य स्तरीय आंचलिक प्रतिभा खोज प्रतियोगिता - भौतिक विज्ञान, रसायन विज्ञान व गणित का वस्तुनिष्ठ पारदर्शी मूल्यांकन।',
-    category: 'State Academic Talent',
-    examDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    startTime: '10:00 AM',
-    endTime: '11:30 AM',
-    durationMinutes: 90,
-    mode: 'BOTH',
-    totalMarks: 100,
-    eligibleClasses: ['Class 9th', 'Class 10th', 'Class 11th']
-  };
-
-  const demoReg = {
-    id: 'demo-reg-01',
-    rollNumber: '2026-1048',
-    examMode: 'OMR',
-    omrSheetToken: 'OMR-2026-1048-HMAC-VERIFIED',
-    competition: demoComp
-  };
-
-  const demoResult = {
-    id: 'demo-result-01',
-    competitionId: 'past-comp-01',
-    competitionTitle: 'प्राथमिक स्तर प्रतिभा खोज प्रतियोगिता 2025',
-    rollNumber: '2025-0812',
-    studentName: user?.fullName || 'Aarav Sharma',
-    rank: 1,
-    finalScore: 94,
-    maximumMarks: 100,
-    correctAnswers: 24,
-    incorrectAnswers: 1,
-    unansweredQuestions: 0,
-    positiveMarks: 96,
-    negativeDeduction: 2,
-    isPublicMeritListEnabled: true
-  };
-
   // Core Data States
-  const [competitions, setCompetitions] = useState(() => isPreview ? [demoComp] : []);
-  const [registrations, setRegistrations] = useState(() => isPreview ? [demoReg] : []);
-  const [myResults, setMyResults] = useState(() => isPreview ? [demoResult] : []);
-  const [loading, setLoading] = useState(() => !isPreview);
+  const [competitions, setCompetitions] = useState([]);
+  const [registrations, setRegistrations] = useState([]);
+  const [myResults, setMyResults] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successAlert, setSuccessAlert] = useState(null);
 
@@ -79,7 +37,7 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
 
   // Load Competitions, Registrations and Results
   const loadData = async () => {
-    if (!isPreview) setLoading(true);
+    setLoading(true);
     setErrorMsg(null);
     try {
       const [compsRes, regsRes, resultsRes] = await Promise.all([
@@ -92,90 +50,14 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
       const regsData = await regsRes.json();
       const resultsData = await resultsRes.json();
 
-      const isPreview = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('preview') || new URLSearchParams(window.location.search).get('view'));
-
-      if (compsRes.ok && compsData.success && compsData.competitions?.length > 0) {
+      if (compsRes.ok && compsData.success) {
         setCompetitions(compsData.competitions || []);
-      } else if (isPreview) {
-        const futureDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
-        setCompetitions([
-          {
-            id: 'demo-comp-01',
-            title: 'वार्षिक विज्ञान एवं गणित प्रतिभा खोज परीक्षा 2026',
-            titleEn: 'Annual Science & Mathematics Talent Search 2026',
-            description: 'राज्य स्तरीय आंचलिक प्रतिभा खोज प्रतियोगिता - भौतिक विज्ञान, रसायन विज्ञान व गणित का वस्तुनिष्ठ मूल्यांकन।',
-            category: 'State Academic Talent',
-            examDate: futureDate,
-            startTime: '10:00 AM',
-            endTime: '11:30 AM',
-            durationMinutes: 90,
-            mode: 'BOTH',
-            totalMarks: 100,
-            eligibleClasses: ['Class 9th', 'Class 10th', 'Class 11th']
-          },
-          {
-            id: 'demo-comp-02',
-            title: 'सामान्य ज्ञान एवं समसामयिकी छात्रवृत्ति परीक्षा',
-            titleEn: 'General Studies & Regional Merit Scholarship',
-            description: 'क्षेत्रीय प्रतिभा विकास हेतु विशेष छात्रवृत्ति एवं प्रशस्ति पत्र योजना।',
-            category: 'Scholarship / Merit',
-            examDate: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(),
-            startTime: '02:00 PM',
-            endTime: '03:30 PM',
-            durationMinutes: 90,
-            mode: 'ONLINE_MCQ',
-            totalMarks: 80,
-            eligibleClasses: ['Class 10th', 'Class 12th']
-          }
-        ]);
       }
-
-      if (regsRes.ok && regsData.success && regsData.registrations?.length > 0) {
+      if (regsRes.ok && regsData.success) {
         setRegistrations(regsData.registrations || []);
-      } else if (isPreview) {
-        const futureDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
-        setRegistrations([
-          {
-            id: 'demo-reg-01',
-            rollNumber: '2026-1048',
-            examMode: 'OMR',
-            omrSheetToken: 'OMR-2026-1048-HMAC-VERIFIED',
-            competition: {
-              id: 'demo-comp-01',
-              title: 'वार्षिक विज्ञान एवं गणित प्रतिभा खोज परीक्षा 2026',
-              category: 'State Academic Talent',
-              examDate: futureDate,
-              startTime: '10:00 AM',
-              endTime: '11:30 AM',
-              durationMinutes: 90,
-              totalMarks: 100,
-              mode: 'BOTH'
-            }
-          }
-        ]);
       }
-
-      if (resultsRes.ok && resultsData.success && resultsData.results?.length > 0) {
+      if (resultsRes.ok && resultsData.success) {
         setMyResults(resultsData.results || []);
-      } else if (isPreview) {
-        setMyResults([
-          {
-            id: 'demo-result-01',
-            competitionId: 'past-comp-01',
-            competitionTitle: 'प्राथमिक स्तर प्रतिभा खोज प्रतियोगिता 2025',
-            rollNumber: '2025-0812',
-            studentName: user?.fullName || 'Aarav Sharma',
-            rank: 1,
-            finalScore: 92,
-            maximumMarks: 100,
-            correctAnswers: 23,
-            incorrectAnswers: 1,
-            unansweredQuestions: 1,
-            positiveMarks: 92,
-            negativeDeduction: 0,
-            isPublicMeritListEnabled: true
-          }
-        ]);
       }
     } catch (err) {
       console.warn('Failed to load student data:', err);
@@ -278,9 +160,12 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
   };
 
   const fetchPublicMerit = async (compId, title) => {
+    const cleanId = typeof compId === 'string' && compId.length !== 24
+      ? compId.match(/[a-f0-9]{24}/i)?.[0] || compId
+      : compId;
     setPublicMeritModal({ open: true, competitionTitle: title, list: [], loading: true, error: null });
     try {
-      const res = await fetch(`${API_BASE_URL}/competitions/${compId}/public-merit-list`);
+      const res = await fetch(`${API_BASE_URL}/competitions/${cleanId}/public-merit-list`);
       const data = await res.json();
       if (res.ok && data.success) {
         setPublicMeritModal({ open: true, competitionTitle: title, list: data.meritList || [], loading: false, error: null });
