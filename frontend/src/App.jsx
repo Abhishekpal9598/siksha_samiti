@@ -33,11 +33,41 @@ export default function App() {
   });
 
   // Current active view: 'home' | 'student-dashboard' | 'admin-dashboard' | 'exam-runner'
-  const [view, setView] = useState('home');
+  const [view, setView] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const reqView = urlParams.get('view') || urlParams.get('preview');
+      if (reqView === 'student' || reqView === 'student-dashboard') return 'student-dashboard';
+      if (reqView === 'admin' || reqView === 'admin-dashboard') return 'admin-dashboard';
+      return 'home';
+    } catch {
+      return 'home';
+    }
+  });
   const [activeExamCompId, setActiveExamCompId] = useState(null);
 
   // Authenticated user state
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const reqView = urlParams.get('view') || urlParams.get('preview');
+      if (reqView === 'student' || reqView === 'student-dashboard') {
+        return {
+          id: 'demo-student-001',
+          fullName: 'Aarav Sharma',
+          mobile: '9876543210',
+          mobileNormalized: '+91 98765 43210',
+          school: 'Saraswati Vidya Mandir Inter College',
+          classOrGrade: 'Class 10th',
+          role: 'student',
+          isActive: true
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
 
   const [healthStatus, setHealthStatus] = useState({
     state: 'loading',
@@ -90,10 +120,16 @@ export default function App() {
           }
         }
       } else {
-        setCurrentUser(null);
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.get('preview') && !urlParams.get('view')) {
+          setCurrentUser(null);
+        }
       }
     } catch {
-      setCurrentUser(null);
+      const urlParams = new URLSearchParams(window.location.search);
+      if (!urlParams.get('preview') && !urlParams.get('view')) {
+        setCurrentUser(null);
+      }
     }
   };
 
