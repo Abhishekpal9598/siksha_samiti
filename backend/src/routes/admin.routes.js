@@ -30,6 +30,11 @@ import {
   requireCommitteeHead 
 } from '../middlewares/auth.middleware.js';
 import { checkOmrServiceHealth } from '../services/omrClient.service.js';
+import { Competition } from '../models/competition.model.js';
+import { Registration } from '../models/registration.model.js';
+import { User } from '../models/user.model.js';
+import { Question } from '../models/question.model.js';
+import { generateGenericOmrPdf, generatePersonalizedOmrPdf } from '../services/omrPdfGenerator.service.js';
 
 const router = Router();
 
@@ -75,6 +80,76 @@ router.get('/omr/health', async (req, res, next) => {
       success: diagnostic.status === 'HEALTHY',
       diagnostic
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 6.2: Printable Generic OMR Answer Sheet PDF
+router.get('/competitions/:id/omr/template-generic-pdf', async (req, res, next) => {
+  try {
+    const { id: competitionId } = req.params;
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'Competition not found.', details: [], requestId: req.id }
+      });
+    }
+
+    const questionCount = await Question.countDocuments({ competitionId, isActive: true });
+    const totalQuestions = parseInt(req.query.totalQuestions, 10) || questionCount || 50;
+
+    const pdfBuffer = await generateGenericOmrPdf({ competition, totalQuestions });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="omr_generic_${competition._id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.status(200).send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 6.2: Printable Personalized OMR Answer Sheet PDF with Secure QR Code
+router.get('/competitions/:id/omr/template-personalized-pdf/:registrationId', async (req, res, next) => {
+  try {
+    const { id: competitionId, registrationId } = req.params;
+
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'Competition not found.', details: [], requestId: req.id }
+      });
+    }
+
+    const registration = await Registration.findOne({ _id: registrationId, competitionId });
+    if (!registration) {
+      return res.status(404).json({
+        error: { code: 'REGISTRATION_NOT_FOUND', message: 'Student registration not found for this competition.', details: [], requestId: req.id }
+      });
+    }
+
+    const student = await User.findById(registration.studentId);
+    if (!student) {
+      return res.status(404).json({
+        error: { code: 'STUDENT_NOT_FOUND', message: 'Student account not found.', details: [], requestId: req.id }
+      });
+    }
+
+    const questionCount = await Question.countDocuments({ competitionId, isActive: true });
+    const totalQuestions = parseInt(req.query.totalQuestions, 10) || questionCount || 50;
+
+    const pdfBuffer = await generatePersonalizedOmrPdf({ competition, registration, student, totalQuestions });
+
+    // Record audit metadata on registration
+    registration.omrSheetGeneratedAt = new Date();
+    registration.omrSheetGeneratedBy = req.user._id;
+    await registration.save();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="omr_${registration.rollNumber}_${competition._id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.status(200).send(pdfBuffer);
   } catch (error) {
     next(error);
   }

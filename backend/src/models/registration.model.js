@@ -45,6 +45,20 @@ const registrationSchema = new mongoose.Schema(
     registeredAt: {
       type: Date,
       default: Date.now
+    },
+    omrSheetToken: {
+      type: String,
+      default: null,
+      index: true
+    },
+    omrSheetGeneratedAt: {
+      type: Date,
+      default: null
+    },
+    omrSheetGeneratedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
     }
   },
   {
