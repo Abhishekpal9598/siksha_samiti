@@ -35,6 +35,14 @@ import { Registration } from '../models/registration.model.js';
 import { User } from '../models/user.model.js';
 import { Question } from '../models/question.model.js';
 import { generateGenericOmrPdf, generatePersonalizedOmrPdf } from '../services/omrPdfGenerator.service.js';
+import {
+  omrUploadMiddleware,
+  uploadOmrSubmissions,
+  listOmrSubmissions,
+  getOmrSubmissionById,
+  downloadPrivateOmrScan,
+  verifySubmissionQr
+} from '../controllers/omr.controller.js';
 
 const router = Router();
 
@@ -154,5 +162,12 @@ router.get('/competitions/:id/omr/template-personalized-pdf/:registrationId', as
     next(error);
   }
 });
+
+// Phase 6.3: Secure Multipart OMR Ingestion, Validation & Storage
+router.post('/competitions/:id/omr/upload', omrUploadMiddleware, uploadOmrSubmissions);
+router.get('/competitions/:id/omr/submissions', listOmrSubmissions);
+router.get('/competitions/:id/omr/submissions/:submissionId', getOmrSubmissionById);
+router.get('/competitions/:id/omr/submissions/:submissionId/file', downloadPrivateOmrScan);
+router.post('/competitions/:id/omr/submissions/:submissionId/verify-qr', verifySubmissionQr);
 
 export default router;

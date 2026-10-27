@@ -3,6 +3,7 @@ import { Attempt } from '../models/attempt.model.js';
 import { Competition } from '../models/competition.model.js';
 import { Question } from '../models/question.model.js';
 import { Registration } from '../models/registration.model.js';
+import { OmrSubmission } from '../models/omrSubmission.model.js';
 import { sweepExpiredAttempts } from '../services/examSweeper.service.js';
 
 /**
@@ -67,13 +68,30 @@ export const startOrResumeAttempt = async (req, res, next) => {
       });
     }
 
-    // 3. Exam Mode Check (OMR vs Online MCQ)
+    // 3. Exam Mode Check (OMR vs Online MCQ) & Atomic Mode Lock
     if (registration.examMode === 'OMR') {
       return res.status(403).json({
         error: {
           code: 'OMR_MODE_ONLY',
           message: 'Your registration is configured for paper OMR sheet examination. Online MCQ examination is not available for OMR candidates.',
           details: ['Your exam will be conducted physically on paper OMR sheet at the designated exam center.'],
+          requestId: req.id
+        }
+      });
+    }
+
+    const omrSubmissionExists = await OmrSubmission.exists({
+      competitionId: competition._id,
+      registrationId: registration._id,
+      status: { $ne: 'FAILED' }
+    });
+
+    if (omrSubmissionExists) {
+      return res.status(403).json({
+        error: {
+          code: 'ATOMIC_MODE_LOCK_VIOLATION',
+          message: 'An OMR examination sheet has already been submitted for this registration. Online examination attempt cannot be started.',
+          details: [],
           requestId: req.id
         }
       });
