@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from .routes import health, alignment
+from .routes import health, alignment, bubbles
 
 app = FastAPI(
     title="Education Committee OMR Vision Service",
@@ -11,6 +11,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(alignment.router)
+app.include_router(bubbles.router)
 
 if __name__ == "__main__":
     import uvicorn

@@ -10,7 +10,7 @@ import {
   MAX_FILE_SIZE,
   MAX_BATCH_SIZE
 } from '../services/omrUpload.service.js';
-import { alignOmrScan } from '../services/omrClient.service.js';
+import { alignOmrScan, detectOmrBubbles } from '../services/omrClient.service.js';
 
 // Multer memory storage configuration for secure pre-ingestion validation
 const storage = multer.memoryStorage();
@@ -540,3 +540,114 @@ export async function downloadAlignedOmrScan(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * Phase 6.5: Execute Bubble Detection, Fill Measurement & Answer Classification
+ * POST /api/v1/admin/competitions/:id/omr/submissions/:submissionId/detect-bubbles
+ */
+export async function processOmrBubbleDetection(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'OMR Submission not found.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // Require aligned image
+    if (!submission.alignedStoragePath || !fs.existsSync(submission.alignedStoragePath)) {
+      return res.status(400).json({
+        error: {
+          code: 'ALIGNED_IMAGE_REQUIRED',
+          message: 'OMR submission must have a valid aligned image before bubble detection.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // Determine question count (from query, body, or competition)
+    let totalQuestions = 50;
+    if (req.body?.totalQuestions) {
+      totalQuestions = parseInt(req.body.totalQuestions, 10);
+    } else {
+      const competition = await Competition.findById(competitionId);
+      if (competition?.totalQuestions) {
+        totalQuestions = competition.totalQuestions;
+      }
+    }
+    totalQuestions = Math.max(1, Math.min(100, totalQuestions || 50));
+
+    // Call Python microservice
+    const result = await detectOmrBubbles({
+      alignedPath: submission.alignedStoragePath,
+      totalQuestions
+    });
+
+    // Immutable Machine Detection: update rawDetections
+    // CRITICAL: submission.confirmedAnswers is NEVER overwritten
+    submission.rawDetections = {
+      detectedAt: new Date(),
+      totalQuestions: result.totalQuestions,
+      layoutType: result.layoutType,
+      answers: result.answers,
+      summary: result.summary
+    };
+
+    if (result.summary?.needsReview) {
+      submission.status = 'NEEDS_REVIEW';
+      submission.rejectionReason = result.summary.reviewReasons?.join('; ') || 'Requires manual review';
+    } else {
+      submission.status = 'PROCESSING';
+      submission.rejectionReason = null;
+    }
+
+    submission.auditTrail.push({
+      action: 'OMR_BUBBLE_DETECTION_PROCESSED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        totalQuestions: result.totalQuestions,
+        layoutType: result.layoutType,
+        singleMarked: result.summary?.singleMarked,
+        blank: result.summary?.blank,
+        multipleMarked: result.summary?.multipleMarked,
+        uncertain: result.summary?.uncertain,
+        overallConfidence: result.summary?.overallConfidence,
+        needsReview: result.summary?.needsReview,
+        preservedExistingConfirmedAnswers: Boolean(submission.confirmedAnswers)
+      }
+    });
+
+    await submission.save();
+
+    res.status(200).json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+    next(error);
+  }
+}
+

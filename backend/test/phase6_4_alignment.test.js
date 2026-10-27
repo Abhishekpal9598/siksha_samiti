@@ -99,7 +99,8 @@ test('=== PHASE 6.4: OMR IMAGE ALIGNMENT, FIDUCIAL DETECTION & QUALITY VALIDATIO
     if (!isServiceUp) {
       pyProcess = spawn(pythonExe, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8001'], {
         cwd: omrAppDir,
-        stdio: 'pipe'
+        env: { ...process.env, PYTHONPATH: omrAppDir },
+        stdio: ['ignore', 'inherit', 'inherit']
       });
 
       for (let i = 0; i < 30; i++) {

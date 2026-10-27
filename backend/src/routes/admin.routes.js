@@ -43,7 +43,8 @@ import {
   downloadPrivateOmrScan,
   verifySubmissionQr,
   processOmrAlignment,
-  downloadAlignedOmrScan
+  downloadAlignedOmrScan,
+  processOmrBubbleDetection
 } from '../controllers/omr.controller.js';
 
 const router = Router();
@@ -175,5 +176,8 @@ router.post('/competitions/:id/omr/submissions/:submissionId/verify-qr', verifyS
 // Phase 6.4: OMR Alignment, Marker Detection, Perspective Rectification & Quality Validation
 router.post('/competitions/:id/omr/submissions/:submissionId/process-alignment', processOmrAlignment);
 router.get('/competitions/:id/omr/submissions/:submissionId/aligned-file', downloadAlignedOmrScan);
+
+// Phase 6.5: OMR Bubble Detection, Fill Measurement & Answer Classification
+router.post('/competitions/:id/omr/submissions/:submissionId/detect-bubbles', processOmrBubbleDetection);
 
 export default router;

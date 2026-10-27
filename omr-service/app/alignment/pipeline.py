@@ -105,7 +105,9 @@ def process_omr_alignment(input_path: str, output_path: str) -> Dict[str, Any]:
         reason = None
 
     # 6. Save Aligned Image to Private Storage
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    out_dir = os.path.dirname(output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     success_save = cv2.imwrite(output_path, aligned_image, [cv2.IMWRITE_PNG_COMPRESSION, 4])
     if not success_save:
         return {

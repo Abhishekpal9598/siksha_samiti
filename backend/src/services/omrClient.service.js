@@ -132,3 +132,56 @@ export async function alignOmrScan({ inputPath, outputPath }) {
     throw err;
   }
 }
+
+/**
+ * Request Python OMR microservice to detect bubbles, compute fill ratios,
+ * and classify answers (SINGLE_MARKED, BLANK, MULTIPLE_MARKED, UNCERTAIN).
+ *
+ * @param {Object} params
+ * @param {string} params.alignedPath - Private filesystem path to aligned rectified PNG
+ * @param {number} [params.totalQuestions=50] - Number of questions (1-100)
+ * @returns {Promise<Object>} Bubble detection and answer classification payload
+ */
+export async function detectOmrBubbles({ alignedPath, totalQuestions = 50 }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+  try {
+    const res = await fetch(`${config.omrServiceUrl}/detect-bubbles`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Service-Key': config.omrInternalKey
+      },
+      body: JSON.stringify({
+        aligned_image_path: alignedPath,
+        total_questions: totalQuestions
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      let parsed;
+      try { parsed = JSON.parse(errorText); } catch { parsed = { message: errorText }; }
+      const err = new Error(parsed.detail?.message || parsed.message || `OMR microservice HTTP ${res.status}`);
+      err.code = parsed.detail?.error || 'OMR_BUBBLE_DETECTION_ERROR';
+      err.statusCode = res.status;
+      throw err;
+    }
+
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('OMR bubble detection service timed out after 30000ms');
+      timeoutErr.code = 'OMR_SERVICE_TIMEOUT';
+      timeoutErr.statusCode = 504;
+      throw timeoutErr;
+    }
+    throw err;
+  }
+}
+
