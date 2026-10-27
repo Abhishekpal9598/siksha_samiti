@@ -371,6 +371,19 @@ export async function ingestOmrFile({
         // ignore disk cleanup error
       }
     }
+
+    if (dbErr.code === 11000) {
+      const isFileHash = dbErr.keyPattern && dbErr.keyPattern.fileHash;
+      const err = new Error(
+        isFileHash
+          ? 'DUPLICATE_FILE_DETECTED: An identical OMR file has already been uploaded for this competition.'
+          : 'DUPLICATE_CANDIDATE_SUBMISSION: An active OMR submission already exists or is being concurrently uploaded for this candidate.'
+      );
+      err.code = isFileHash ? 'DUPLICATE_FILE_DETECTED' : 'DUPLICATE_CANDIDATE_SUBMISSION';
+      err.statusCode = 409;
+      throw err;
+    }
+
     throw dbErr;
   }
 }

@@ -145,7 +145,16 @@ const omrSubmissionSchema = new mongoose.Schema(
 
 // STRICT INTEGRITY INDEXES
 omrSubmissionSchema.index({ competitionId: 1, fileHash: 1 });
-omrSubmissionSchema.index({ competitionId: 1, registrationId: 1 });
+omrSubmissionSchema.index(
+  { competitionId: 1, registrationId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      registrationId: { $type: 'objectId' },
+      status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'VERIFIED'] }
+    }
+  }
+);
 omrSubmissionSchema.index({ competitionId: 1, status: 1 });
 
 export const OmrSubmission = mongoose.model('OmrSubmission', omrSubmissionSchema);

@@ -122,6 +122,7 @@ test('=== PHASE 6.3: SECURE OMR INGESTION & REGISTRATION VALIDATION ===', async 
     await User.deleteMany({ mobileNormalized: { $regex: /^9999633/ } });
     await Competition.deleteMany({ title: { $regex: /^P63Test_/ } });
     await OmrSubmission.deleteMany({});
+    await OmrSubmission.syncIndexes();
 
     const passwordHash = await bcrypt.hash('Phase63Pass@123', 8);
 
@@ -490,6 +491,149 @@ test('=== PHASE 6.3: SECURE OMR INGESTION & REGISTRATION VALIDATION ===', async 
 
     assert.equal(res.status, 403);
     assert.ok(res.body.error.code === 'OMR_MODE_ONLY' || res.body.error.code === 'ATOMIC_MODE_LOCK_VIOLATION');
+  });
+
+  await suite.test('Integration (Concurrency): Promise.all simultaneous online attempt and OMR upload proves only authorized mode wins', async () => {
+    // Concurrently trigger online attempt start (by OMR student) and OMR sheet upload (by Admin for same OMR student)
+    const form = new FormData();
+    form.append('file', new Blob([createFakeJpeg()], { type: 'image/jpeg' }), 'concurrent_omr.jpg');
+    form.append('registrationId', regOmr._id.toString());
+
+    const [onlineAttemptRes, omrUploadRes] = await Promise.all([
+      makeRequest(app, 'POST', `/api/v1/competitions/${competition._id}/attempts`, {
+        cookie: studentOmrCookie
+      }),
+      makeRequest(app, 'POST', `/api/v1/admin/competitions/${competition._id}/omr/upload`, {
+        cookie: adminCookie,
+        body: form
+      })
+    ]);
+
+    // Exactly one exam mode can win:
+    // Online attempt MUST be rejected with HTTP 403 (OMR_MODE_ONLY or ATOMIC_MODE_LOCK_VIOLATION)
+    assert.equal(onlineAttemptRes.status, 403);
+    assert.ok(
+      onlineAttemptRes.body.error.code === 'OMR_MODE_ONLY' ||
+      onlineAttemptRes.body.error.code === 'ATOMIC_MODE_LOCK_VIOLATION'
+    );
+
+    // OMR upload MUST either win (201) or safely detect existing candidate submission (409)
+    assert.ok([201, 409].includes(omrUploadRes.status));
+
+    // Verify database state: no online attempt was ever created for OMR student
+    const createdAttempt = await Attempt.findOne({
+      competitionId: competition._id,
+      studentId: studentOmr._id
+    });
+    assert.equal(createdAttempt, null);
+  });
+
+  await suite.test('Integration (Concurrency): Promise.all simultaneous OMR uploads for same candidate rejects losing race with HTTP 409', async () => {
+    // Create a new fresh candidate in OMR mode to test parallel upload collision
+    const studentOmrParallel = await User.create({
+      fullName: 'Parallel Candidate Meera',
+      mobile: '+91 9999633009',
+      mobileNormalized: '9999633009',
+      role: 'student',
+      passwordHash: await bcrypt.hash('Phase63Pass@123', 8),
+      isActive: true,
+      classOrGrade: 'Class 10',
+      school: 'Kendriya Vidyalaya'
+    });
+
+    const regParallel = await Registration.create({
+      competitionId: competition._id,
+      studentId: studentOmrParallel._id,
+      rollNumber: 'EC-2026-OMR99',
+      examMode: 'OMR',
+      status: 'registered',
+      omrSheetToken: 'parallel_test_token_12345'
+    });
+
+    // Two different file buffers (different SHA-256 hashes) for the SAME candidate
+    const form1 = new FormData();
+    form1.append('file', new Blob([createFakeJpeg()], { type: 'image/jpeg' }), 'parallel_scan_1.jpg');
+    form1.append('registrationId', regParallel._id.toString());
+
+    const form2 = new FormData();
+    form2.append('file', new Blob([createFakeJpeg()], { type: 'image/jpeg' }), 'parallel_scan_2.jpg');
+    form2.append('registrationId', regParallel._id.toString());
+
+    const [upload1, upload2] = await Promise.all([
+      makeRequest(app, 'POST', `/api/v1/admin/competitions/${competition._id}/omr/upload`, {
+        cookie: adminCookie,
+        body: form1
+      }),
+      makeRequest(app, 'POST', `/api/v1/admin/competitions/${competition._id}/omr/upload`, {
+        cookie: adminCookie,
+        body: form2
+      })
+    ]);
+
+    const statuses = [upload1.status, upload2.status].sort();
+    // Exactly one upload succeeds (201) and the other is safely rejected with HTTP 409
+    assert.deepEqual(statuses, [201, 409]);
+
+    const rejected = upload1.status === 409 ? upload1 : upload2;
+    assert.equal(rejected.body.error.code, 'DUPLICATE_CANDIDATE_SUBMISSION');
+
+    // Verify database state: exactly ONE submission exists for this registration
+    const count = await OmrSubmission.countDocuments({
+      competitionId: competition._id,
+      registrationId: regParallel._id,
+      status: { $ne: 'FAILED' }
+    });
+    assert.equal(count, 1);
+  });
+
+  // --- BATCH UPLOAD TESTS ---
+  await suite.test('Integration (Batch): Partial batch resilience - invalid file in batch does not corrupt or discard valid uploads', async () => {
+    const validJpeg = createFakeJpeg();
+    const invalidText = Buffer.from('plain text not an image');
+
+    const batchForm = new FormData();
+    batchForm.append('files', new Blob([validJpeg], { type: 'image/jpeg' }), 'valid_in_batch.jpg');
+    batchForm.append('files', new Blob([invalidText], { type: 'image/jpeg' }), 'corrupt_in_batch.jpg');
+
+    const res = await makeRequest(app, 'POST', `/api/v1/admin/competitions/${competition._id}/omr/upload`, {
+      cookie: adminCookie,
+      body: batchForm
+    });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.totalUploaded, 1);
+    assert.equal(res.body.data.totalFailed, 1);
+    assert.equal(res.body.data.submissions.length, 1);
+    assert.equal(res.body.data.submissions[0].originalFilename, 'valid_in_batch.jpg');
+    assert.equal(res.body.data.errors.length, 1);
+    assert.equal(res.body.data.errors[0].filename, 'corrupt_in_batch.jpg');
+    assert.equal(res.body.data.errors[0].code, 'INVALID_FILE_SIGNATURE');
+
+    // Verify valid file actually exists in MongoDB
+    const subDoc = await OmrSubmission.findById(res.body.data.submissions[0].id);
+    assert.ok(subDoc);
+    assert.equal(subDoc.fileFormat, 'JPEG');
+  });
+
+  await suite.test('Integration (Batch): Batch exceeding 100 MB total limit is rejected with HTTP 413', async () => {
+    // Create 11 files of 9.5 MB each = ~104.5 MB (> 100 MB MAX_BATCH_SIZE)
+    const largeBatchForm = new FormData();
+    const chunk = Buffer.alloc(9.5 * 1024 * 1024, 0xFF);
+    chunk[0] = 0xFF;
+    chunk[1] = 0xD8;
+    chunk[2] = 0xFF;
+
+    for (let i = 0; i < 11; i++) {
+      largeBatchForm.append('files', new Blob([chunk], { type: 'image/jpeg' }), `large_${i}.jpg`);
+    }
+
+    const res = await makeRequest(app, 'POST', `/api/v1/admin/competitions/${competition._id}/omr/upload`, {
+      cookie: adminCookie,
+      body: largeBatchForm
+    });
+
+    assert.equal(res.status, 413);
+    assert.equal(res.body.error.code, 'BATCH_TOO_LARGE');
   });
 
   // --- SECURITY & AUTHORIZATION TESTS ---
