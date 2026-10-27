@@ -10,6 +10,7 @@ import {
   MAX_FILE_SIZE,
   MAX_BATCH_SIZE
 } from '../services/omrUpload.service.js';
+import { alignOmrScan } from '../services/omrClient.service.js';
 
 // Multer memory storage configuration for secure pre-ingestion validation
 const storage = multer.memoryStorage();
@@ -390,6 +391,152 @@ export async function verifySubmissionQr(req, res, next) {
         }
       });
     }
+    next(error);
+  }
+}
+
+/**
+ * Phase 6.4: Execute Fiducial Marker Detection, Alignment & Quality Assessment
+ * POST /api/v1/admin/competitions/:id/omr/submissions/:submissionId/process-alignment
+ */
+export async function processOmrAlignment(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'OMR Submission not found.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // Verify source file exists on disk
+    if (!fs.existsSync(submission.storagePath)) {
+      return res.status(404).json({
+        error: {
+          code: 'FILE_NOT_FOUND_ON_DISK',
+          message: 'Original scan file not found in private storage.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // Safe aligned filename and destination
+    const alignedFilename = `aligned_${submission._id}.png`;
+    const alignedStoragePath = resolveSafeStoragePath(alignedFilename);
+
+    // Call Python OMR microservice
+    const result = await alignOmrScan({
+      inputPath: submission.storagePath,
+      outputPath: alignedStoragePath
+    });
+
+    // Update submission document
+    submission.status = result.status || (result.success ? 'PROCESSING' : 'NEEDS_REVIEW');
+    submission.rejectionReason = result.rejectionReason || result.error || null;
+    submission.qualityMetrics = result.qualityMetrics || null;
+    submission.alignment = result.alignment || null;
+
+    if (result.success) {
+      submission.alignedFilename = alignedFilename;
+      submission.alignedStoragePath = alignedStoragePath;
+      submission.alignedAt = new Date();
+    }
+
+    submission.auditTrail.push({
+      action: result.success ? 'OMR_ALIGNMENT_PROCESSED' : 'OMR_ALIGNMENT_REJECTED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        status: submission.status,
+        confidence: result.alignment?.confidence,
+        skewAngleDegrees: result.alignment?.skewAngleDegrees,
+        passedQualityGates: result.qualityMetrics?.passedQualityGates,
+        rejectionReason: submission.rejectionReason
+      }
+    });
+
+    await submission.save();
+
+    res.status(200).json({
+      success: result.success,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Phase 6.4: Download/Stream Private Aligned OMR Scan (Admin/Head only)
+ * GET /api/v1/admin/competitions/:id/omr/submissions/:submissionId/aligned-file
+ */
+export async function downloadAlignedOmrScan(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission || !submission.alignedStoragePath) {
+      return res.status(404).json({
+        error: {
+          code: 'ALIGNED_FILE_NOT_FOUND',
+          message: 'Aligned image has not been generated for this submission.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    const absoluteFilePath = resolveSafeStoragePath(submission.alignedFilename);
+
+    if (!fs.existsSync(absoluteFilePath)) {
+      return res.status(404).json({
+        error: {
+          code: 'FILE_NOT_FOUND_ON_DISK',
+          message: 'Physical aligned image file not found in private storage.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    const stat = fs.statSync(absoluteFilePath);
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `inline; filename="aligned_${submission._id}.png"`);
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    const readStream = fs.createReadStream(absoluteFilePath);
+    readStream.pipe(res);
+  } catch (error) {
     next(error);
   }
 }

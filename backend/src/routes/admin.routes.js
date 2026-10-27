@@ -41,7 +41,9 @@ import {
   listOmrSubmissions,
   getOmrSubmissionById,
   downloadPrivateOmrScan,
-  verifySubmissionQr
+  verifySubmissionQr,
+  processOmrAlignment,
+  downloadAlignedOmrScan
 } from '../controllers/omr.controller.js';
 
 const router = Router();
@@ -169,5 +171,9 @@ router.get('/competitions/:id/omr/submissions', listOmrSubmissions);
 router.get('/competitions/:id/omr/submissions/:submissionId', getOmrSubmissionById);
 router.get('/competitions/:id/omr/submissions/:submissionId/file', downloadPrivateOmrScan);
 router.post('/competitions/:id/omr/submissions/:submissionId/verify-qr', verifySubmissionQr);
+
+// Phase 6.4: OMR Alignment, Marker Detection, Perspective Rectification & Quality Validation
+router.post('/competitions/:id/omr/submissions/:submissionId/process-alignment', processOmrAlignment);
+router.get('/competitions/:id/omr/submissions/:submissionId/aligned-file', downloadAlignedOmrScan);
 
 export default router;

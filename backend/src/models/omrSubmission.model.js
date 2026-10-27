@@ -100,6 +100,31 @@ const omrSubmissionSchema = new mongoose.Schema(
       sha256Matched: { type: Boolean, default: false },
       notes: { type: String, default: null }
     },
+    // Phase 6.4: Aligned Storage & Quality Metrics
+    alignedFilename: {
+      type: String,
+      default: null
+    },
+    alignedStoragePath: {
+      type: String,
+      default: null
+    },
+    alignedMimeType: {
+      type: String,
+      default: 'image/png'
+    },
+    alignedAt: {
+      type: Date,
+      default: null
+    },
+    alignment: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    qualityMetrics: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     rawDetections: {
       type: mongoose.Schema.Types.Mixed,
       default: null
@@ -137,6 +162,7 @@ const omrSubmissionSchema = new mongoose.Schema(
         delete ret.__v;
         // Never leak absolute private filesystem path in JSON payloads
         delete ret.storagePath;
+        delete ret.alignedStoragePath;
         return ret;
       }
     }
