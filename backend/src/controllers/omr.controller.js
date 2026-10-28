@@ -651,3 +651,488 @@ export async function processOmrBubbleDetection(req, res, next) {
   }
 }
 
+/**
+ * Phase 6.6: Start / Resume OMR Verification Review
+ * POST /api/v1/admin/competitions/:id/omr/submissions/:submissionId/start-review
+ */
+export async function startOmrReview(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'OMR Submission not found.', details: [], requestId: req.id }
+      });
+    }
+
+    if (!submission.rawDetections || !submission.rawDetections.answers) {
+      return res.status(400).json({
+        error: {
+          code: 'RAW_DETECTIONS_REQUIRED',
+          message: 'OMR submission must have completed bubble detection before manual review can begin.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    if (!submission.confirmedAnswers) {
+      submission.confirmedAnswers = {
+        status: 'IN_REVIEW',
+        answers: {},
+        correctionHistory: [],
+        reviewNotes: '',
+        verifiedBy: req.user._id,
+        verifiedAt: null,
+        isFullyVerified: false,
+        version: 1
+      };
+    } else if (submission.confirmedAnswers.status !== 'VERIFIED') {
+      submission.confirmedAnswers.status = 'IN_REVIEW';
+    }
+
+    if (['NEEDS_REVIEW', 'PROCESSING', 'UPLOADED'].includes(submission.status)) {
+      submission.status = 'IN_REVIEW';
+    }
+
+    submission.auditTrail.push({
+      action: 'OMR_REVIEW_STARTED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        reviewer: req.user._id,
+        currentStatus: submission.status,
+        version: submission.confirmedAnswers?.version || 1
+      }
+    });
+
+    submission.markModified('confirmedAnswers');
+    await submission.save();
+
+    res.status(200).json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: { code: error.code, message: error.message, details: [], requestId: req.id }
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Phase 6.6: Question-wise Answer Verification & Manual Correction
+ * PUT /api/v1/admin/competitions/:id/omr/submissions/:submissionId/answers/:questionNumber
+ */
+export async function updateOmrQuestionAnswer(req, res, next) {
+  try {
+    const { id: competitionId, submissionId, questionNumber } = req.params;
+    const { selectedOption, reason, expectedVersion } = req.body;
+
+    const qNum = parseInt(questionNumber, 10);
+    if (isNaN(qNum) || qNum < 1) {
+      return res.status(400).json({
+        error: { code: 'INVALID_QUESTION_NUMBER', message: 'Question number must be a positive integer.', details: [], requestId: req.id }
+      });
+    }
+
+    const ALLOWED_OPTIONS = ['A', 'B', 'C', 'D', 'BLANK'];
+    if (!selectedOption || !ALLOWED_OPTIONS.includes(selectedOption)) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_OPTION',
+          message: `selectedOption must be one of: ${ALLOWED_OPTIONS.join(', ')}`,
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'OMR Submission not found.', details: [], requestId: req.id }
+      });
+    }
+
+    if (!submission.rawDetections || !submission.rawDetections.answers) {
+      return res.status(400).json({
+        error: { code: 'RAW_DETECTIONS_REQUIRED', message: 'OMR bubble detection must be performed first.', details: [], requestId: req.id }
+      });
+    }
+
+    if (qNum > submission.rawDetections.totalQuestions) {
+      return res.status(400).json({
+        error: {
+          code: 'QUESTION_OUT_OF_BOUNDS',
+          message: `Question number Q${qNum} exceeds total sheet questions (${submission.rawDetections.totalQuestions}).`,
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    if (submission.status === 'VERIFIED') {
+      return res.status(400).json({
+        error: {
+          code: 'SUBMISSION_ALREADY_VERIFIED',
+          message: 'Cannot modify answers on a verified submission. Reopen the verification first.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    // Initialize confirmedAnswers if not already present
+    if (!submission.confirmedAnswers) {
+      submission.confirmedAnswers = {
+        status: 'IN_REVIEW',
+        answers: {},
+        correctionHistory: [],
+        reviewNotes: '',
+        verifiedBy: req.user._id,
+        verifiedAt: null,
+        isFullyVerified: false,
+        version: 1
+      };
+    }
+
+    // Optimistic Concurrency Control Check
+    if (expectedVersion !== undefined && expectedVersion !== null) {
+      const currentVersion = submission.confirmedAnswers.version || 1;
+      if (expectedVersion !== currentVersion) {
+        return res.status(409).json({
+          error: {
+            code: 'CONCURRENT_REVIEW_CONFLICT',
+            message: 'Conflict: This submission has been updated by another reviewer. Please refresh to load latest changes.',
+            details: [`Expected version ${expectedVersion}, but found version ${currentVersion}`],
+            requestId: req.id
+          }
+        });
+      }
+    }
+
+    // Identify machine detection for comparison
+    const machineAnswer = submission.rawDetections.answers.find(a => a.questionNumber === qNum);
+    const machineOption = machineAnswer?.detectedOption || (machineAnswer?.classification === 'BLANK' ? 'BLANK' : null);
+    const isCorrected = selectedOption !== machineOption;
+
+    if (isCorrected && (!reason || typeof reason !== 'string' || reason.trim().length < 3)) {
+      return res.status(400).json({
+        error: {
+          code: 'REASON_REQUIRED',
+          message: `A descriptive reason (min 3 characters) is required when correcting machine detection for Q${qNum}.`,
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    const previousOption = submission.confirmedAnswers.answers?.[qNum]?.selectedOption || null;
+
+    // Record correction history entry
+    if (!Array.isArray(submission.confirmedAnswers.correctionHistory)) {
+      submission.confirmedAnswers.correctionHistory = [];
+    }
+    submission.confirmedAnswers.correctionHistory.push({
+      questionNumber: qNum,
+      previousOption,
+      newOption: selectedOption,
+      reason: reason?.trim() || (isCorrected ? 'Manual correction' : 'Manual confirmation'),
+      correctedBy: req.user._id,
+      timestamp: new Date()
+    });
+
+    // Update confirmed answer map
+    if (!submission.confirmedAnswers.answers) {
+      submission.confirmedAnswers.answers = {};
+    }
+    submission.confirmedAnswers.answers[qNum] = {
+      selectedOption,
+      isConfirmed: true,
+      confirmedBy: req.user._id,
+      confirmedAt: new Date(),
+      isCorrected,
+      machineDetection: machineAnswer?.detectedOption || null,
+      machineClassification: machineAnswer?.classification || 'UNCERTAIN',
+      reason: reason?.trim() || null
+    };
+
+    // Increment optimistic version and transition state
+    submission.confirmedAnswers.version = (submission.confirmedAnswers.version || 1) + 1;
+    submission.confirmedAnswers.status = 'PARTIALLY_VERIFIED';
+    submission.status = 'PARTIALLY_VERIFIED';
+
+    submission.auditTrail.push({
+      action: isCorrected ? 'OMR_ANSWER_CORRECTED' : 'OMR_ANSWER_CONFIRMED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        questionNumber: qNum,
+        previousOption,
+        newOption: selectedOption,
+        machineDetection: machineAnswer?.detectedOption || null,
+        machineClassification: machineAnswer?.classification || 'UNCERTAIN',
+        reason: reason?.trim() || null,
+        version: submission.confirmedAnswers.version
+      }
+    });
+
+    submission.markModified('confirmedAnswers');
+    await submission.save();
+
+    res.status(200).json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: { code: error.code, message: error.message, details: [], requestId: req.id }
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Phase 6.6: Finalize Verification (Explicit Reviewer Confirmation)
+ * POST /api/v1/admin/competitions/:id/omr/submissions/:submissionId/finalize-verification
+ */
+export async function finalizeOmrVerification(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+    const { reviewNotes, confirmRemainingClean, expectedVersion } = req.body;
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'OMR Submission not found.', details: [], requestId: req.id }
+      });
+    }
+
+    if (submission.status === 'VERIFIED') {
+      return res.status(400).json({
+        error: { code: 'ALREADY_VERIFIED', message: 'This OMR submission is already fully verified.', details: [], requestId: req.id }
+      });
+    }
+
+    if (!submission.rawDetections || !submission.rawDetections.answers) {
+      return res.status(400).json({
+        error: { code: 'RAW_DETECTIONS_REQUIRED', message: 'Cannot verify submission without machine bubble detections.', details: [], requestId: req.id }
+      });
+    }
+
+    // Initialize confirmedAnswers if empty
+    if (!submission.confirmedAnswers) {
+      submission.confirmedAnswers = {
+        status: 'IN_REVIEW',
+        answers: {},
+        correctionHistory: [],
+        reviewNotes: '',
+        verifiedBy: req.user._id,
+        verifiedAt: null,
+        isFullyVerified: false,
+        version: 1
+      };
+    }
+
+    // Concurrency check
+    if (expectedVersion !== undefined && expectedVersion !== null) {
+      const currentVersion = submission.confirmedAnswers.version || 1;
+      if (expectedVersion !== currentVersion) {
+        return res.status(409).json({
+          error: {
+            code: 'CONCURRENT_REVIEW_CONFLICT',
+            message: 'Conflict: This submission was updated by another reviewer. Please refresh and try again.',
+            details: [],
+            requestId: req.id
+          }
+        });
+      }
+    }
+
+    const totalQuestions = submission.rawDetections.totalQuestions;
+    const answersMap = submission.confirmedAnswers.answers || {};
+    const unresolvedQuestions = [];
+
+    for (let q = 1; q <= totalQuestions; q++) {
+      const confirmed = answersMap[q];
+      if (confirmed && confirmed.isConfirmed) {
+        continue;
+      }
+
+      // Check machine detection
+      const mach = submission.rawDetections.answers.find(a => a.questionNumber === q);
+      const isClean = mach && (mach.classification === 'SINGLE_MARKED' || mach.classification === 'BLANK') && mach.confidence >= 0.70;
+
+      if (isClean && confirmRemainingClean) {
+        // Explicitly confirm under reviewer's identity
+        const selectedOption = mach.classification === 'BLANK' ? 'BLANK' : mach.detectedOption;
+        answersMap[q] = {
+          selectedOption,
+          isConfirmed: true,
+          confirmedBy: req.user._id,
+          confirmedAt: new Date(),
+          isCorrected: false,
+          machineDetection: mach.detectedOption || null,
+          machineClassification: mach.classification,
+          reason: 'Confirmed clean machine detection'
+        };
+      } else {
+        unresolvedQuestions.push({
+          questionNumber: q,
+          classification: mach?.classification || 'UNCERTAIN',
+          reviewReason: mach?.reviewReason || 'Unconfirmed question'
+        });
+      }
+    }
+
+    if (unresolvedQuestions.length > 0) {
+      const unresolvedSummary = unresolvedQuestions.map(u => `Q${u.questionNumber} (${u.classification})`).slice(0, 10).join(', ');
+      return res.status(400).json({
+        error: {
+          code: 'UNRESOLVED_QUESTIONS_REMAIN',
+          message: `Cannot finalize verification. ${unresolvedQuestions.length} question(s) remain unresolved: ${unresolvedSummary}${unresolvedQuestions.length > 10 ? '...' : ''}`,
+          details: unresolvedQuestions,
+          requestId: req.id
+        }
+      });
+    }
+
+    submission.confirmedAnswers.answers = answersMap;
+    submission.confirmedAnswers.status = 'VERIFIED';
+    submission.confirmedAnswers.isFullyVerified = true;
+    submission.confirmedAnswers.verifiedBy = req.user._id;
+    submission.confirmedAnswers.verifiedAt = new Date();
+    submission.confirmedAnswers.reviewNotes = reviewNotes || submission.confirmedAnswers.reviewNotes || '';
+    submission.confirmedAnswers.version = (submission.confirmedAnswers.version || 1) + 1;
+
+    submission.status = 'VERIFIED';
+    submission.rejectionReason = null;
+
+    submission.auditTrail.push({
+      action: 'OMR_VERIFICATION_FINALIZED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        totalQuestions,
+        verifiedBy: req.user._id,
+        correctionsCount: submission.confirmedAnswers.correctionHistory?.length || 0,
+        reviewNotes: submission.confirmedAnswers.reviewNotes,
+        version: submission.confirmedAnswers.version
+      }
+    });
+
+    submission.markModified('confirmedAnswers');
+    await submission.save();
+
+    res.status(200).json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: { code: error.code, message: error.message, details: [], requestId: req.id }
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Phase 6.6: Reopen Verification for Authorized Correction
+ * POST /api/v1/admin/competitions/:id/omr/submissions/:submissionId/reopen-verification
+ */
+export async function reopenOmrVerification(req, res, next) {
+  try {
+    const { id: competitionId, submissionId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      return res.status(400).json({
+        error: {
+          code: 'REOPEN_REASON_REQUIRED',
+          message: 'A descriptive reason (min 5 characters) is required to reopen a verified submission.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    const submission = await OmrSubmission.findOne({
+      _id: submissionId,
+      competitionId
+    });
+
+    if (!submission) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'OMR Submission not found.', details: [], requestId: req.id }
+      });
+    }
+
+    if (submission.status !== 'VERIFIED') {
+      return res.status(400).json({
+        error: {
+          code: 'SUBMISSION_NOT_VERIFIED',
+          message: 'Only fully VERIFIED submissions can be reopened.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
+    submission.status = 'REOPENED';
+    if (!submission.confirmedAnswers) {
+      submission.confirmedAnswers = {};
+    }
+    submission.confirmedAnswers.status = 'REOPENED';
+    submission.confirmedAnswers.isFullyVerified = false;
+    submission.confirmedAnswers.version = (submission.confirmedAnswers.version || 1) + 1;
+
+    submission.auditTrail.push({
+      action: 'OMR_VERIFICATION_REOPENED',
+      performedBy: req.user._id,
+      timestamp: new Date(),
+      details: {
+        reason: reason.trim(),
+        reopenedBy: req.user._id,
+        version: submission.confirmedAnswers.version
+      }
+    });
+
+    submission.markModified('confirmedAnswers');
+    await submission.save();
+
+    res.status(200).json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    if (error.code) {
+      return res.status(error.statusCode || 500).json({
+        error: { code: error.code, message: error.message, details: [], requestId: req.id }
+      });
+    }
+    next(error);
+  }
+}
+
+

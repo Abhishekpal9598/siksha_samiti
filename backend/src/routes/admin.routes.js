@@ -44,7 +44,11 @@ import {
   verifySubmissionQr,
   processOmrAlignment,
   downloadAlignedOmrScan,
-  processOmrBubbleDetection
+  processOmrBubbleDetection,
+  startOmrReview,
+  updateOmrQuestionAnswer,
+  finalizeOmrVerification,
+  reopenOmrVerification
 } from '../controllers/omr.controller.js';
 
 const router = Router();
@@ -179,5 +183,11 @@ router.get('/competitions/:id/omr/submissions/:submissionId/aligned-file', downl
 
 // Phase 6.5: OMR Bubble Detection, Fill Measurement & Answer Classification
 router.post('/competitions/:id/omr/submissions/:submissionId/detect-bubbles', processOmrBubbleDetection);
+
+// Phase 6.6: OMR Admin Manual Answer Verification
+router.post('/competitions/:id/omr/submissions/:submissionId/start-review', startOmrReview);
+router.put('/competitions/:id/omr/submissions/:submissionId/answers/:questionNumber', updateOmrQuestionAnswer);
+router.post('/competitions/:id/omr/submissions/:submissionId/finalize-verification', finalizeOmrVerification);
+router.post('/competitions/:id/omr/submissions/:submissionId/reopen-verification', reopenOmrVerification);
 
 export default router;

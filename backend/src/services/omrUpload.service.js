@@ -219,7 +219,7 @@ export async function verifyAndLockRegistration({ competitionId, registrationId,
   const existingSubmission = await OmrSubmission.findOne({
     competitionId,
     registrationId: registration._id,
-    status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'VERIFIED'] }
+    status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'IN_REVIEW', 'PARTIALLY_VERIFIED', 'VERIFIED', 'REOPENED'] }
   });
 
   if (existingSubmission) {

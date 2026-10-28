@@ -75,7 +75,7 @@ const omrSubmissionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'FAILED', 'VERIFIED'],
+      enum: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'IN_REVIEW', 'PARTIALLY_VERIFIED', 'VERIFIED', 'REOPENED', 'FAILED'],
       default: 'UPLOADED',
       index: true
     },
@@ -177,7 +177,7 @@ omrSubmissionSchema.index(
     unique: true,
     partialFilterExpression: {
       registrationId: { $type: 'objectId' },
-      status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'VERIFIED'] }
+      status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'IN_REVIEW', 'PARTIALLY_VERIFIED', 'VERIFIED', 'REOPENED'] }
     }
   }
 );

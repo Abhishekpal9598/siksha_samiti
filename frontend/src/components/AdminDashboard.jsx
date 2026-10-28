@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AdminOmrReview from './AdminOmrReview.jsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
 
@@ -778,6 +779,23 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
             >
               ⚖️ {t.meritList}
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('omr')}
+              style={{
+                background: activeTab === 'omr' ? '#3B82F6' : 'transparent',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              📝 {t.tabOmrVerification || 'OMR Verification'}
+            </button>
           </nav>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -948,6 +966,13 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
                     onClick={() => setActiveTab('questions')}
                   >
                     ❓ {t.tabQuestionBank}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => setActiveTab('omr')}
+                  >
+                    📝 {t.tabOmrVerification || 'OMR Verification'}
                   </button>
                 </div>
               </div>
@@ -1839,6 +1864,22 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
               </div>
             )}
           </div>
+        )}
+
+        {/* ================= OMR VERIFICATION TAB ================= */}
+        {activeTab === 'omr' && (
+          <AdminOmrReview
+            competitions={competitions}
+            selectedCompId={selectedCompForMerit || (competitions[0]?.id)}
+            onSelectCompetition={(id) => {
+              setSelectedCompForMerit(id);
+            }}
+            t={t}
+            lang={lang}
+            getMutationHeaders={getMutationHeaders}
+            apiBaseUrl={API_BASE_URL}
+            user={user}
+          />
         )}
       </main>
 
