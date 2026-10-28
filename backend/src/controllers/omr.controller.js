@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { Competition } from '../models/competition.model.js';
 import { OmrSubmission } from '../models/omrSubmission.model.js';
+import { Result } from '../models/result.model.js';
 import {
   ingestOmrFile,
   verifyAndLockRegistration,
@@ -890,12 +891,48 @@ export async function updateOmrQuestionAnswer(req, res, next) {
       }
     });
 
-    submission.markModified('confirmedAnswers');
-    await submission.save();
+    const versionCondition = (expectedVersion !== undefined && expectedVersion !== null)
+      ? {
+          $or: [
+            { 'confirmedAnswers.version': expectedVersion },
+            ...(expectedVersion === 1 ? [{ 'confirmedAnswers.version': { $exists: false } }] : [])
+          ]
+        }
+      : {};
+
+    const updated = await OmrSubmission.findOneAndUpdate(
+      {
+        _id: submissionId,
+        competitionId,
+        status: { $ne: 'VERIFIED' },
+        ...versionCondition
+      },
+      {
+        $set: {
+          confirmedAnswers: submission.confirmedAnswers,
+          status: 'PARTIALLY_VERIFIED'
+        },
+        $push: {
+          auditTrail: submission.auditTrail[submission.auditTrail.length - 1]
+        }
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!updated) {
+      return res.status(409).json({
+        error: {
+          code: 'CONCURRENT_REVIEW_CONFLICT',
+          message: 'Conflict: This submission has been updated by another reviewer. Please refresh to load latest changes.',
+          details: [`Expected version ${expectedVersion} does not match current database state`],
+          requestId: req.id
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
-      data: submission
+      data: updated
     });
   } catch (error) {
     if (error.code) {
@@ -1040,12 +1077,54 @@ export async function finalizeOmrVerification(req, res, next) {
       }
     });
 
-    submission.markModified('confirmedAnswers');
-    await submission.save();
+    const versionCondition = (expectedVersion !== undefined && expectedVersion !== null)
+      ? {
+          $or: [
+            { 'confirmedAnswers.version': expectedVersion },
+            ...(expectedVersion === 1 ? [{ 'confirmedAnswers.version': { $exists: false } }] : [])
+          ]
+        }
+      : {};
+
+    const updated = await OmrSubmission.findOneAndUpdate(
+      {
+        _id: submissionId,
+        competitionId,
+        status: { $ne: 'VERIFIED' },
+        ...versionCondition
+      },
+      {
+        $set: {
+          confirmedAnswers: submission.confirmedAnswers,
+          status: 'VERIFIED',
+          rejectionReason: null
+        },
+        $push: {
+          auditTrail: submission.auditTrail[submission.auditTrail.length - 1]
+        }
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!updated) {
+      if (expectedVersion !== undefined && expectedVersion !== null) {
+        return res.status(409).json({
+          error: {
+            code: 'CONCURRENT_REVIEW_CONFLICT',
+            message: 'Conflict: This submission was updated by another reviewer. Please refresh and try again.',
+            details: [`Expected version ${expectedVersion} does not match current database state`],
+            requestId: req.id
+          }
+        });
+      }
+      return res.status(400).json({
+        error: { code: 'UPDATE_FAILED', message: 'Failed to finalize verification.', details: [], requestId: req.id }
+      });
+    }
 
     res.status(200).json({
       success: true,
-      data: submission
+      data: updated
     });
   } catch (error) {
     if (error.code) {
@@ -1088,6 +1167,18 @@ export async function reopenOmrVerification(req, res, next) {
       });
     }
 
+    const competition = await Competition.findById(competitionId);
+    if (competition && competition.resultStatus === 'PUBLISHED') {
+      return res.status(400).json({
+        error: {
+          code: 'CANNOT_REOPEN_PUBLISHED',
+          message: 'Cannot reopen verification while competition results are PUBLISHED. The Committee Head must unpublish results first.',
+          details: [],
+          requestId: req.id
+        }
+      });
+    }
+
     if (submission.status !== 'VERIFIED') {
       return res.status(400).json({
         error: {
@@ -1106,6 +1197,17 @@ export async function reopenOmrVerification(req, res, next) {
     submission.confirmedAnswers.status = 'REOPENED';
     submission.confirmedAnswers.isFullyVerified = false;
     submission.confirmedAnswers.version = (submission.confirmedAnswers.version || 1) + 1;
+
+    // Invalidate any previously evaluated Result so reopened submissions never retain stale scoring
+    if (submission.studentId) {
+      await Result.deleteMany({ competitionId, studentId: submission.studentId });
+    }
+
+    // If competition results were previously APPROVED, revert to EVALUATED to require re-approval
+    if (competition && competition.resultStatus === 'APPROVED') {
+      competition.resultStatus = 'EVALUATED';
+      await competition.save();
+    }
 
     submission.auditTrail.push({
       action: 'OMR_VERIFICATION_REOPENED',

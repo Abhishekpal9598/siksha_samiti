@@ -332,28 +332,32 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
 
   // Score Verified OMR Submissions
   for (const sub of verifiedOmrSubmissions) {
+    if (!sub.confirmedAnswers || !sub.confirmedAnswers.isFullyVerified) {
+      const error = new Error(`Cannot score OMR submission ${sub._id}: Submission is not fully verified.`);
+      error.statusCode = 400;
+      error.code = 'UNVERIFIED_OMR_SUBMISSION';
+      throw error;
+    }
+
     const omrAnswers = questions.map((q, idx) => {
       const qNum = q.order || (idx + 1);
       const qNumStr = qNum.toString();
-      let selected = null;
 
-      if (sub.confirmedAnswers?.answers) {
-        const conf = sub.confirmedAnswers.answers instanceof Map
-          ? sub.confirmedAnswers.answers.get(qNumStr)
-          : sub.confirmedAnswers.answers[qNumStr];
-        if (conf && conf.selectedOption) {
-          selected = conf.selectedOption;
-        }
+      // STRICT SCORING DATA INTEGRITY: Every answer entering the scoring engine must have an explicit confirmed state
+      const conf = sub.confirmedAnswers.answers instanceof Map
+        ? sub.confirmedAnswers.answers.get(qNumStr)
+        : sub.confirmedAnswers.answers?.[qNumStr];
+
+      if (!conf || !conf.isConfirmed) {
+        const error = new Error(`Cannot score OMR submission ${sub._id}: Question ${qNum} has no confirmed answer in confirmedAnswers. All answers must be explicitly verified before scoring.`);
+        error.statusCode = 400;
+        error.code = 'UNCONFIRMED_ANSWER_REMAINS';
+        error.details = { questionNumber: qNum, submissionId: sub._id };
+        throw error;
       }
 
-      if (!selected && sub.rawDetections?.answers) {
-        const raw = sub.rawDetections.answers.find((a) => a.questionNumber === qNum);
-        if (raw && raw.detectedOption) {
-          selected = raw.detectedOption;
-        }
-      }
-
-      if (selected === 'BLANK') {
+      let selected = conf.selectedOption;
+      if (selected === 'BLANK' || !selected) {
         selected = null;
       }
 
@@ -393,8 +397,14 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
 
   assignStandardRanks(intermediateResults, tieBreakerOrder);
 
-  // 9. Persist Results Atomically (Bulk Upsert)
+  // 9. Persist Results Atomically (Bulk Upsert) & Purge Stale Results
   const evaluatedAt = new Date();
+  const evaluatedStudentIds = intermediateResults.map((r) => r.studentId);
+  await Result.deleteMany({
+    competitionId: competition._id,
+    studentId: { $nin: evaluatedStudentIds }
+  });
+
   if (intermediateResults.length > 0) {
     const bulkOps = intermediateResults.map((item) => ({
       updateOne: {
