@@ -1,6 +1,7 @@
 import { Competition } from '../models/competition.model.js';
 import { Question } from '../models/question.model.js';
 import { Attempt } from '../models/attempt.model.js';
+import { OmrSubmission } from '../models/omrSubmission.model.js';
 import { Result } from '../models/result.model.js';
 import { EvaluationAuditLog } from '../models/evaluationAuditLog.model.js';
 import { sweepExpiredAttempts } from './examSweeper.service.js';
@@ -90,7 +91,7 @@ export function scoreAnswerSheet({ questions, answers = [], competitionConfig = 
 
     // 3. Evaluate Student / OMR Response
     const selectedOpt = answerMap.has(qIdStr) ? answerMap.get(qIdStr) : null;
-    const hasAttempted = selectedOpt !== null && selectedOpt !== undefined && selectedOpt !== '';
+    const hasAttempted = selectedOpt !== null && selectedOpt !== undefined && selectedOpt !== '' && selectedOpt !== 'BLANK';
 
     if (hasAttempted) {
       attemptedQuestions++;
@@ -215,10 +216,10 @@ export function assignStandardRanks(results, tieBreakerOrder) {
 
 /**
  * Central Competition Evaluation Orchestrator
- * Evaluates all submitted/auto-submitted attempts for a competition,
- * applies scoring and tie-breaking, persists results, and updates audit log.
+ * Evaluates all submitted/auto-submitted online attempts AND verified OMR submissions for a competition,
+ * applies scoring and tie-breaking, persists unified results, and updates audit log.
  */
-export async function evaluateCompetition({ competitionId, actor, reason = '', isReEvaluation = false }) {
+export async function evaluateCompetition({ competitionId, actor, reason = '', isReEvaluation = false, allowUnverifiedOmr = false }) {
   // 1. Startup & pre-scoring reconciliation: sweep expired attempts
   await sweepExpiredAttempts();
 
@@ -272,11 +273,31 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
   }).populate('studentId', 'fullName mobileNormalized school classOrGrade')
     .populate('registrationId', 'rollNumber');
 
+  // 6. Fetch Verified OMR Submissions & Check Pending Unverified Submissions Guard
+  const unverifiedOmrCount = await OmrSubmission.countDocuments({
+    competitionId,
+    status: { $in: ['UPLOADED', 'QUEUED', 'PROCESSING', 'NEEDS_REVIEW', 'IN_REVIEW', 'PARTIALLY_VERIFIED', 'REOPENED'] }
+  });
+
+  if (unverifiedOmrCount > 0 && !allowUnverifiedOmr) {
+    const error = new Error(`Cannot evaluate competition: ${unverifiedOmrCount} OMR submission(s) are pending review or verification. Please verify all OMR submissions or specify allowUnverifiedOmr: true.`);
+    error.statusCode = 400;
+    error.code = 'UNVERIFIED_OMR_SUBMISSIONS_REMAIN';
+    error.details = { unverifiedCount: unverifiedOmrCount };
+    throw error;
+  }
+
+  const verifiedOmrSubmissions = await OmrSubmission.find({
+    competitionId,
+    status: 'VERIFIED'
+  }).populate('studentId', 'fullName mobileNormalized school classOrGrade')
+    .populate('registrationId', 'rollNumber');
+
   const scoringVersion = isReEvaluation 
     ? (competition.scoringVersion || 1) + 1 
     : (competition.scoringVersion || 1);
 
-  // 6. Score Each Attempt
+  // 7. Score Each Online Attempt and Verified OMR Submission
   const intermediateResults = [];
   const compConfig = {
     negativeMarking: competition.negativeMarking,
@@ -284,6 +305,7 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
     scoreFloorZero: competition.scoreFloorZero !== false
   };
 
+  // Score Online Attempts
   for (const att of attempts) {
     const breakdown = scoreAnswerSheet({
       questions,
@@ -293,6 +315,7 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
 
     intermediateResults.push({
       attempt: att,
+      omrSubmission: null,
       competitionId: competition._id,
       studentId: att.studentId?._id || att.studentId,
       registrationId: att.registrationId?._id || att.registrationId,
@@ -307,14 +330,70 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
     });
   }
 
-  // 7. Apply Tie-Breaking and Assign Standard Competition Ranks
+  // Score Verified OMR Submissions
+  for (const sub of verifiedOmrSubmissions) {
+    const omrAnswers = questions.map((q, idx) => {
+      const qNum = q.order || (idx + 1);
+      const qNumStr = qNum.toString();
+      let selected = null;
+
+      if (sub.confirmedAnswers?.answers) {
+        const conf = sub.confirmedAnswers.answers instanceof Map
+          ? sub.confirmedAnswers.answers.get(qNumStr)
+          : sub.confirmedAnswers.answers[qNumStr];
+        if (conf && conf.selectedOption) {
+          selected = conf.selectedOption;
+        }
+      }
+
+      if (!selected && sub.rawDetections?.answers) {
+        const raw = sub.rawDetections.answers.find((a) => a.questionNumber === qNum);
+        if (raw && raw.detectedOption) {
+          selected = raw.detectedOption;
+        }
+      }
+
+      if (selected === 'BLANK') {
+        selected = null;
+      }
+
+      return {
+        questionId: q._id,
+        selectedOption: selected
+      };
+    });
+
+    const breakdown = scoreAnswerSheet({
+      questions,
+      answers: omrAnswers,
+      competitionConfig: compConfig
+    });
+
+    intermediateResults.push({
+      attempt: null,
+      omrSubmission: sub,
+      competitionId: competition._id,
+      studentId: sub.studentId?._id || sub.studentId,
+      registrationId: sub.registrationId?._id || sub.registrationId,
+      rollNumber: sub.registrationId?.rollNumber || sub.rollNumber || 'UNKNOWN',
+      studentName: sub.studentId?.fullName || 'Unknown Student',
+      school: sub.studentId?.school || '',
+      classOrGrade: sub.studentId?.classOrGrade || '',
+      mode: 'OMR',
+      submittedAt: sub.confirmedAnswers?.verifiedAt || sub.createdAt,
+      scoringVersion,
+      ...breakdown
+    });
+  }
+
+  // 8. Apply Tie-Breaking and Assign Standard Competition Ranks
   const tieBreakerOrder = competition.tieBreakerRules && competition.tieBreakerRules.length > 0
     ? competition.tieBreakerRules
     : ['FINAL_SCORE', 'CORRECT_ANSWERS', 'INCORRECT_ANSWERS', 'SUBMISSION_TIME'];
 
   assignStandardRanks(intermediateResults, tieBreakerOrder);
 
-  // 8. Persist Results Atomically (Bulk Upsert)
+  // 9. Persist Results Atomically (Bulk Upsert)
   const evaluatedAt = new Date();
   if (intermediateResults.length > 0) {
     const bulkOps = intermediateResults.map((item) => ({
@@ -324,7 +403,8 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
           $set: {
             competitionId: item.competitionId,
             studentId: item.studentId,
-            attemptId: item.attempt._id,
+            attemptId: item.attempt ? item.attempt._id : null,
+            omrSubmissionId: item.omrSubmission ? item.omrSubmission._id : null,
             registrationId: item.registrationId,
             rollNumber: item.rollNumber,
             studentName: item.studentName,
@@ -354,14 +434,14 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
     await Result.bulkWrite(bulkOps);
   }
 
-  // 9. Update Competition Status and Metadata
+  // 10. Update Competition Status and Metadata
   competition.resultStatus = 'EVALUATED';
   competition.scoringVersion = scoringVersion;
   competition.evaluatedAt = evaluatedAt;
   competition.evaluatedBy = actor._id;
   await competition.save();
 
-  // 10. Audit Log Entry
+  // 11. Audit Log Entry
   await EvaluationAuditLog.create({
     competitionId: competition._id,
     actorId: actor._id,
@@ -372,6 +452,9 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
     reason: reason || (isReEvaluation ? 'Re-evaluation triggered' : 'Initial scoring evaluation'),
     details: {
       evaluatedCount: intermediateResults.length,
+      evaluatedOnlineCount: attempts.length,
+      evaluatedOmrCount: verifiedOmrSubmissions.length,
+      unverifiedOmrCount,
       scoringVersion,
       tieBreakerOrder,
       maxMarks: intermediateResults[0]?.maximumMarks || 0
@@ -384,6 +467,8 @@ export async function evaluateCompetition({ competitionId, actor, reason = '', i
     resultStatus: competition.resultStatus,
     scoringVersion,
     evaluatedCount: intermediateResults.length,
+    evaluatedOnlineCount: attempts.length,
+    evaluatedOmrCount: verifiedOmrSubmissions.length,
     tieBreakerRules: tieBreakerOrder,
     evaluatedAt
   };

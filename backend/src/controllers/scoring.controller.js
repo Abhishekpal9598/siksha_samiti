@@ -9,20 +9,21 @@ import { evaluateCompetition, assignStandardRanks } from '../services/scoring.se
 export const evaluateCompetitionHandler = async (req, res, next) => {
   try {
     const { id: competitionId } = req.params;
-    const { reason, isReEvaluation } = req.body;
+    const { reason, isReEvaluation, allowUnverifiedOmr } = req.body;
 
     const evaluation = await evaluateCompetition({
       competitionId,
       actor: req.user,
       reason: reason || '',
-      isReEvaluation: Boolean(isReEvaluation)
+      isReEvaluation: Boolean(isReEvaluation),
+      allowUnverifiedOmr: Boolean(allowUnverifiedOmr)
     });
 
     res.status(200).json({
       success: true,
       message: evaluation.evaluatedCount > 0
-        ? `Successfully evaluated ${evaluation.evaluatedCount} exam attempt(s).`
-        : 'Competition evaluation completed. No submitted attempts were found to evaluate.',
+        ? `Successfully evaluated ${evaluation.evaluatedCount} candidate submission(s) (${evaluation.evaluatedOnlineCount || 0} online, ${evaluation.evaluatedOmrCount || 0} OMR).`
+        : 'Competition evaluation completed. No submitted attempts or verified OMR sheets were found to evaluate.',
       evaluation
     });
   } catch (error) {

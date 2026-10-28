@@ -52,9 +52,12 @@ const resultSchema = new mongoose.Schema(
     attemptId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Attempt',
-      required: [true, 'Attempt ID is required'],
-      unique: true,
-      index: true
+      default: null
+    },
+    omrSubmissionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OmrSubmission',
+      default: null
     },
     registrationId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -164,7 +167,22 @@ const resultSchema = new mongoose.Schema(
 // STRICT INTEGRITY INDEXES:
 // 1. One result per student per competition (Strict Unique Compound Index)
 resultSchema.index({ competitionId: 1, studentId: 1 }, { unique: true });
-// 2. Ranking and Merit List sorting indexes
+// 2. Mode-specific attempt or OMR submission unique links (Partial unique indexes)
+resultSchema.index(
+  { attemptId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { attemptId: { $type: 'objectId' } }
+  }
+);
+resultSchema.index(
+  { omrSubmissionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { omrSubmissionId: { $type: 'objectId' } }
+  }
+);
+// 3. Ranking and Merit List sorting indexes
 resultSchema.index({ competitionId: 1, rank: 1 });
 resultSchema.index({ competitionId: 1, finalScore: -1 });
 
@@ -225,7 +243,8 @@ resultSchema.methods.toAdminMeritJSON = function () {
     id: this._id.toString(),
     competitionId: this.competitionId.toString(),
     studentId: this.studentId.toString(),
-    attemptId: this.attemptId.toString(),
+    attemptId: this.attemptId ? this.attemptId.toString() : null,
+    omrSubmissionId: this.omrSubmissionId ? this.omrSubmissionId.toString() : null,
     registrationId: this.registrationId.toString(),
     rank: this.rank,
     rollNumber: this.rollNumber,
