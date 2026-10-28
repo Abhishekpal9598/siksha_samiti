@@ -393,4 +393,85 @@ test('12. Hindi and English UI & Localization Verification', async (t) => {
     assert.equal(translations.en.btnApprove, 'Approve Results & Merit List');
     assert.equal(translations.en.myScorecard, 'My Exam Result & Scorecard');
   });
+
+  // --- PHASE 6 OMR VERIFICATION TESTS ---
+  const requiredPhase6Keys = [
+    'tabOmrVerification',
+    'omrSubmissionsTitle',
+    'omrSubmissionsDesc',
+    'omrSelectCompetition',
+    'omrSelectSubmission',
+    'omrCandidateDetails',
+    'omrAlignedSheetViewer',
+    'omrQuestionsDeck',
+    'omrConfirmedAnswers',
+    'omrMachineDetection',
+    'omrHumanConfirmation',
+    'omrFinalizeConfirmTitle',
+    'omrReopenTitle',
+    'omrCorrectionHistory'
+  ];
+
+  await t.test('All Phase 6 OMR Verification keys exist in Hindi (hi)', () => {
+    for (const key of requiredPhase6Keys) {
+      assert.ok(translations.hi[key], `Missing Hindi Phase 6 key: ${key}`);
+      assert.equal(typeof translations.hi[key], 'string');
+      assert.ok(translations.hi[key].trim().length > 0);
+    }
+  });
+
+  await t.test('All Phase 6 OMR Verification keys exist in English (en)', () => {
+    for (const key of requiredPhase6Keys) {
+      assert.ok(translations.en[key], `Missing English Phase 6 key: ${key}`);
+      assert.equal(typeof translations.en[key], 'string');
+      assert.ok(translations.en[key].trim().length > 0);
+    }
+  });
+
+  // --- PHASE 7 FRONTEND AUDIT & REGISTRATION MANAGEMENT TESTS ---
+  const requiredPhase7Keys = [
+    'tabRegistrations',
+    'tabAccountProfile',
+    'roleCommitteeHead',
+    'dashboardHeadTitle',
+    'governanceNoticeHead',
+    'governanceNoticeAdmin',
+    'downloadPersonalizedOmrBtn',
+    'downloadGenericOmrBtn',
+    'totalRegistrationsComp',
+    'studentProfileTitle',
+    'accountDetailsTitle',
+    'securityNoticeText',
+    'governanceOversightTitle'
+  ];
+
+  await t.test('All Phase 7 Registration & Governance keys exist in Hindi (hi)', () => {
+    for (const key of requiredPhase7Keys) {
+      assert.ok(translations.hi[key], `Missing Hindi Phase 7 key: ${key}`);
+      assert.equal(typeof translations.hi[key], 'string');
+      assert.ok(translations.hi[key].trim().length > 0);
+    }
+  });
+
+  await t.test('All Phase 7 Registration & Governance keys exist in English (en)', () => {
+    for (const key of requiredPhase7Keys) {
+      assert.ok(translations.en[key], `Missing English Phase 7 key: ${key}`);
+      assert.equal(typeof translations.en[key], 'string');
+      assert.ok(translations.en[key].trim().length > 0);
+    }
+  });
+
+  await t.test('Phase 7 specific Hindi strings contain expected Devanagari characters', () => {
+    assert.equal(translations.hi.tabRegistrations, 'पंजीकृत छात्र एवं ओएमआर');
+    assert.equal(translations.hi.roleCommitteeHead, 'समिति अध्यक्ष (Committee Head)');
+    assert.equal(translations.hi.dashboardHeadTitle, 'समिति अध्यक्ष शासन पोर्टल');
+    assert.equal(translations.hi.studentProfileTitle, 'छात्र प्रोफ़ाइल एवं खाता जानकारी');
+  });
+
+  await t.test('Phase 7 specific English strings contain expected text', () => {
+    assert.equal(translations.en.tabRegistrations, 'Registrations & OMR Sheets');
+    assert.equal(translations.en.roleCommitteeHead, 'Committee Head');
+    assert.equal(translations.en.dashboardHeadTitle, 'Committee Head Governance Portal');
+    assert.equal(translations.en.studentProfileTitle, 'Student Profile & Account Details');
+  });
 });

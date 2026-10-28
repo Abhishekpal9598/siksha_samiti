@@ -70,6 +70,36 @@ router.post('/competitions/:competitionId/questions', createQuestion);
 router.put('/questions/:questionId', updateQuestion);
 router.delete('/questions/:questionId', deleteQuestion);
 
+// Student & Registration Management
+router.get('/competitions/:id/registrations', async (req, res, next) => {
+  try {
+    const { id: competitionId } = req.params;
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      return res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'Competition not found.', details: [], requestId: req.id }
+      });
+    }
+
+    const registrations = await Registration.find({ competitionId })
+      .populate('studentId', 'fullName mobile school classOrGrade email')
+      .sort({ registeredAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      competition: {
+        id: competition._id,
+        title: competition.title,
+        code: competition.code,
+        mode: competition.mode
+      },
+      registrations
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Phase 4: Exam Attempt Monitoring
 router.get('/competitions/:id/attempts', listAdminAttempts);
 

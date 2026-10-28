@@ -61,7 +61,7 @@ export default function LoginModal({
       }
 
       // Check role authorization on the specific login modal
-      if (isAdmin && data.user.role !== 'admin') {
+      if (isAdmin && data.user.role !== 'admin' && data.user.role !== 'committee_head') {
         // A student attempted to log into the Admin Portal
         // Immediately revoke session cookie
         await fetch(`${API_BASE_URL}/auth/logout`, {

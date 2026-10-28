@@ -50,6 +50,13 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
   const [loadingAttempts, setLoadingAttempts] = useState(false);
   const [attemptsError, setAttemptsError] = useState(null);
 
+  // Student & Registration Management state (Phase 7)
+  const [selectedCompForRegs, setSelectedCompForRegs] = useState('');
+  const [registrationsList, setRegistrationsList] = useState([]);
+  const [loadingRegs, setLoadingRegs] = useState(false);
+  const [regsError, setRegsError] = useState(null);
+  const [regsSearch, setRegsSearch] = useState('');
+
   // Phase 5: Results, Scoring & Merit List state
   const [selectedCompForMerit, setSelectedCompForMerit] = useState('');
   const [meritData, setMeritData] = useState({ meritList: [], auditLogs: [], competition: null });
@@ -107,6 +114,9 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
           if (!selectedCompForMerit) {
             setSelectedCompForMerit(data.competitions[0].id);
           }
+          if (!selectedCompForRegs) {
+            setSelectedCompForRegs(data.competitions[0].id);
+          }
         }
       } else {
         setCompError(data.error?.message || 'Failed to load competitions');
@@ -115,6 +125,28 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
       setCompError(err.message || 'Network error fetching competitions');
     } finally {
       setLoadingCompetitions(false);
+    }
+  };
+
+  // Fetch Registrations for a Competition (Phase 7)
+  const fetchRegistrations = async (compId) => {
+    if (!compId) return;
+    setLoadingRegs(true);
+    setRegsError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/competitions/${compId}/registrations`, {
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setRegistrationsList(data.registrations || []);
+      } else {
+        setRegsError(data.error?.message || 'Failed to load registrations');
+      }
+    } catch (err) {
+      setRegsError(err.message || 'Network error fetching registrations');
+    } finally {
+      setLoadingRegs(false);
     }
   };
 
@@ -670,32 +702,44 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
   return (
     <div className="dashboard-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#F8FAFC' }}>
       {/* Admin Header */}
-      <header style={{ background: '#0F172A', color: '#FFFFFF', position: 'sticky', top: 0, zIndex: 50, borderBottom: '1px solid #334155' }}>
+      <header style={{ background: '#101B35', color: '#FFFFFF', position: 'sticky', top: 0, zIndex: 50, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ background: '#1E293B', border: '1px solid #475569', color: '#60A5FA', width: '38px', height: '38px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
-              🔐
+            <div style={{
+              background: user?.role === 'committee_head' ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)' : '#1E293B',
+              border: user?.role === 'committee_head' ? '1px solid #FCD34D' : '1px solid #475569',
+              color: '#FFFFFF',
+              width: '38px',
+              height: '38px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.2rem',
+              boxShadow: user?.role === 'committee_head' ? '0 0 12px rgba(245, 158, 11, 0.4)' : 'none'
+            }}>
+              {user?.role === 'committee_head' ? '👑' : '🛡️'}
             </div>
             <div>
               <span style={{ fontSize: '1rem', fontWeight: 700, display: 'block', color: '#FFFFFF' }}>
                 {t.systemTitle}
               </span>
-              <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-                {t.dashboardAdminTitle}
+              <span style={{ fontSize: '0.75rem', color: user?.role === 'committee_head' ? '#FDE047' : '#94A3B8', fontWeight: 600 }}>
+                {user?.role === 'committee_head' ? (t.dashboardHeadTitle || 'Committee Head Governance Portal') : t.dashboardAdminTitle}
               </span>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <nav style={{ display: 'flex', gap: '0.5rem', background: '#1E293B', padding: '0.25rem', borderRadius: '8px', border: '1px solid #334155' }}>
+          <nav style={{ display: 'flex', gap: '0.35rem', background: 'rgba(255,255,255,0.06)', padding: '0.25rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={() => setActiveTab('overview')}
               style={{
-                background: activeTab === 'overview' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'overview' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -709,10 +753,10 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
               type="button"
               onClick={() => setActiveTab('competitions')}
               style={{
-                background: activeTab === 'competitions' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'competitions' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -726,10 +770,10 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
               type="button"
               onClick={() => setActiveTab('questions')}
               style={{
-                background: activeTab === 'questions' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'questions' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -742,14 +786,34 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
             <button
               type="button"
               onClick={() => {
+                setActiveTab('registrations');
+                if (selectedCompForRegs) fetchRegistrations(selectedCompForRegs);
+              }}
+              style={{
+                background: activeTab === 'registrations' ? '#0645E5' : 'transparent',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '0.4rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              👥 {t.tabRegistrations}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setActiveTab('attempts');
                 if (selectedCompForAttempts) fetchAttempts(selectedCompForAttempts);
               }}
               style={{
-                background: activeTab === 'attempts' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'attempts' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -766,10 +830,10 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
                 if (selectedCompForMerit) fetchMerit(selectedCompForMerit);
               }}
               style={{
-                background: activeTab === 'merit' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'merit' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -783,10 +847,10 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
               type="button"
               onClick={() => setActiveTab('omr')}
               style={{
-                background: activeTab === 'omr' ? '#3B82F6' : 'transparent',
+                background: activeTab === 'omr' ? '#0645E5' : 'transparent',
                 color: '#FFFFFF',
                 border: 'none',
-                padding: '0.4rem 0.85rem',
+                padding: '0.4rem 0.75rem',
                 borderRadius: '6px',
                 fontSize: '0.825rem',
                 fontWeight: 600,
@@ -795,6 +859,23 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
               }}
             >
               📝 {t.tabOmrVerification || 'OMR Verification'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              style={{
+                background: activeTab === 'profile' ? '#0645E5' : 'transparent',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '0.4rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              👤 {t.tabAccountProfile}
             </button>
           </nav>
 
@@ -910,7 +991,71 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
                   {competitions.reduce((acc, c) => acc + (c.questionCount || 0), 0)}
                 </span>
               </div>
+              <div className="card" style={{ background: '#FFFFFF', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)', display: 'block', marginBottom: '0.25rem' }}>{t.totalRegistrationsComp}</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0645E5' }}>
+                  {competitions.reduce((acc, c) => acc + (c.registrationCount || 0), 0)}
+                </span>
+              </div>
             </div>
+
+            {/* Committee Head Exclusive Governance Panel */}
+            {user?.role === 'committee_head' && (
+              <div style={{
+                background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
+                border: '1.5px solid #FCD34D',
+                borderRadius: 'var(--radius-card)',
+                padding: '1.5rem',
+                marginBottom: '2rem',
+                boxShadow: '0 4px 15px rgba(245, 158, 11, 0.12)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem', borderBottom: '1px solid rgba(245, 158, 11, 0.3)', paddingBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{ fontSize: '1.5rem' }}>👑</span>
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#92400E', margin: 0 }}>
+                        {t.governanceOversightTitle}
+                      </h3>
+                      <span style={{ fontSize: '0.8rem', color: '#B45309' }}>
+                        {t.governanceNoticeHead}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setActiveTab('merit');
+                      if (selectedCompForMerit) fetchMerit(selectedCompForMerit);
+                    }}
+                    style={{ background: '#D97706', color: '#FFFFFF', border: 'none', fontWeight: 700 }}
+                  >
+                    ⚖️ {t.meritList}
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                  <div style={{ background: '#FFFFFF', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #FDE68A' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#B45309', display: 'block', fontWeight: 600 }}>{t.pendingApprovalBadge}</span>
+                    <strong style={{ fontSize: '1.4rem', color: '#D97706' }}>
+                      {competitions.filter((c) => c.resultStatus === 'PENDING_APPROVAL' || c.resultStatus === 'EVALUATED').length}
+                    </strong>
+                  </div>
+                  <div style={{ background: '#FFFFFF', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #FDE68A' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#166534', display: 'block', fontWeight: 600 }}>{t.readyToPublishBadge}</span>
+                    <strong style={{ fontSize: '1.4rem', color: '#16A34A' }}>
+                      {competitions.filter((c) => c.resultStatus === 'APPROVED').length}
+                    </strong>
+                  </div>
+                  <div style={{ background: '#FFFFFF', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #FDE68A' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#1E40AF', display: 'block', fontWeight: 600 }}>{t.publishedBadge}</span>
+                    <strong style={{ fontSize: '1.4rem', color: '#2563EB' }}>
+                      {competitions.filter((c) => c.resultStatus === 'PUBLISHED').length}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Profile Card & Navigation Shortcuts */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
@@ -966,6 +1111,16 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
                     onClick={() => setActiveTab('questions')}
                   >
                     ❓ {t.tabQuestionBank}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => {
+                      setActiveTab('registrations');
+                      if (selectedCompForRegs) fetchRegistrations(selectedCompForRegs);
+                    }}
+                  >
+                    👥 {t.tabRegistrations}
                   </button>
                   <button
                     type="button"
@@ -1880,6 +2035,423 @@ export default function AdminDashboard({ user, onLogout, lang, setLang, t }) {
             apiBaseUrl={API_BASE_URL}
             user={user}
           />
+        )}
+
+        {/* ================= TAB 7: REGISTRATIONS & OMR SHEETS ================= */}
+        {activeTab === 'registrations' && (
+          <div>
+            {/* Top Controls Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#101B35', margin: '0 0 0.25rem 0' }}>
+                  👥 {t.tabRegistrations}
+                </h2>
+                <p style={{ color: 'var(--color-muted)', fontSize: '0.875rem', margin: 0 }}>
+                  {lang === 'hi' 
+                    ? 'प्रतियोगितावार पंजीकृत छात्रों की सूची, परीक्षा माध्यम स्थिति एवं व्यक्तिगत ओएमआर पत्रक डाउनलोड।' 
+                    : 'List of registered candidates per competition, mode verification, and personalized OMR sheet generation.'}
+                </p>
+              </div>
+
+              {/* Competition Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#101B35' }}>
+                  {t.tabCompetitions}:
+                </label>
+                <select
+                  value={selectedCompForRegs}
+                  onChange={(e) => {
+                    const compId = e.target.value;
+                    setSelectedCompForRegs(compId);
+                    fetchRegistrations(compId);
+                  }}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: '8px',
+                    border: '1.5px solid #CBD5E1',
+                    fontSize: '0.9rem',
+                    background: '#FFFFFF',
+                    fontWeight: 600,
+                    minWidth: '240px'
+                  }}
+                >
+                  {competitions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.code || c.status})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => fetchRegistrations(selectedCompForRegs)}
+                  disabled={loadingRegs}
+                  title="Refresh registrations"
+                >
+                  🔄
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="card" style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)', display: 'block', marginBottom: '0.25rem' }}>{t.totalRegistrationsComp}</span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#101B35' }}>{registrationsList.length}</span>
+              </div>
+              <div className="card" style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)', display: 'block', marginBottom: '0.25rem' }}>{t.onlineRegsCount}</span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0645E5' }}>
+                  {registrationsList.filter((r) => r.examMode === 'ONLINE_MCQ').length}
+                </span>
+              </div>
+              <div className="card" style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)', display: 'block', marginBottom: '0.25rem' }}>{t.omrRegsCount}</span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#7C3AED' }}>
+                  {registrationsList.filter((r) => r.examMode === 'OMR').length}
+                </span>
+              </div>
+              <div className="card" style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <a
+                  href={`${API_BASE_URL}/admin/competitions/${selectedCompForRegs}/omr/template-generic-pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-outline btn-sm"
+                  style={{ borderColor: '#7C3AED', color: '#7C3AED', textDecoration: 'none', fontWeight: 700 }}
+                >
+                  📋 {t.downloadGenericOmrBtn}
+                </a>
+              </div>
+            </div>
+
+            {/* Search Filter Bar */}
+            <div style={{ marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder={t.searchStudentsPlaceholder}
+                value={regsSearch}
+                onChange={(e) => setRegsSearch(e.target.value)}
+                style={{
+                  flex: 1,
+                  maxWidth: '420px',
+                  padding: '0.6rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--color-border)',
+                  fontSize: '0.9rem'
+                }}
+              />
+              {regsSearch && (
+                <button
+                  type="button"
+                  onClick={() => setRegsSearch('')}
+                  style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  ✕ {lang === 'hi' ? 'हटाएं' : 'Clear'}
+                </button>
+              )}
+            </div>
+
+            {/* Error Message */}
+            {regsError && (
+              <div style={{ background: '#FEE2E2', color: '#B91C1C', padding: '0.85rem 1.25rem', borderRadius: '8px', marginBottom: '1.25rem', border: '1px solid #FCA5A5' }}>
+                {regsError}
+              </div>
+            )}
+
+            {/* Loading Spinner */}
+            {loadingRegs ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-muted)' }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>⏳</div>
+                <span>{lang === 'hi' ? 'पंजीकृत छात्र लोड हो रहे हैं...' : 'Loading registered candidates...'}</span>
+              </div>
+            ) : (() => {
+              const filtered = registrationsList.filter((r) => {
+                if (!regsSearch) return true;
+                const q = regsSearch.toLowerCase();
+                const name = (r.studentId?.fullName || '').toLowerCase();
+                const roll = (r.rollNumber || '').toLowerCase();
+                const school = (r.studentId?.school || '').toLowerCase();
+                const mobile = (r.studentId?.mobile || '').toLowerCase();
+                return name.includes(q) || roll.includes(q) || school.includes(q) || mobile.includes(q);
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="card" style={{ background: '#FFFFFF', padding: '3rem', textAlign: 'center', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                    <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>👥</span>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#101B35', marginBottom: '0.35rem' }}>
+                      {t.noRegistrationsFound}
+                    </h3>
+                    <p style={{ color: 'var(--color-muted)', fontSize: '0.875rem', margin: 0 }}>
+                      {lang === 'hi' ? 'इस प्रतियोगिता में अभी कोई छात्र पंजीकृत नहीं है अथवा खोज मापदंड से कोई परिणाम नहीं मिला।' : 'No candidates registered for this competition yet or no matches found.'}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="card" style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid var(--color-border)', overflowX: 'auto', boxShadow: 'var(--shadow-sm)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '1px solid var(--color-border)' }}>
+                        <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#101B35' }}>{t.rollNumberCol}</th>
+                        <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#101B35' }}>{t.studentDetailsCol}</th>
+                        <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#101B35' }}>{t.examModeCol}</th>
+                        <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#101B35' }}>{t.registeredAtCol}</th>
+                        <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#101B35', textAlign: 'right' }}>{t.actionsCol}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((reg) => (
+                        <tr key={reg._id || reg.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <span style={{
+                              background: '#EFF6FF',
+                              color: '#0645E5',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              fontFamily: 'monospace',
+                              fontWeight: 800,
+                              fontSize: '0.9rem',
+                              border: '1px solid #BFDBFE'
+                            }}>
+                              {reg.rollNumber}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <strong style={{ display: 'block', color: '#101B35', fontSize: '0.925rem' }}>
+                              {reg.studentId?.fullName || 'N/A'}
+                            </strong>
+                            <span style={{ color: 'var(--color-muted)', fontSize: '0.8rem', display: 'block' }}>
+                              🏫 {reg.studentId?.school || 'N/A'} • 🎒 {reg.studentId?.classOrGrade || 'N/A'}
+                            </span>
+                            <span style={{ color: '#64748B', fontSize: '0.775rem' }}>
+                              📞 {reg.studentId?.mobile || 'N/A'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            {reg.examMode === 'OMR' ? (
+                              <span style={{
+                                background: '#F3E8FF',
+                                color: '#7E22CE',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                border: '1px solid #E9D5FF'
+                              }}>
+                                📝 OMR Sheet
+                              </span>
+                            ) : (
+                              <span style={{
+                                background: '#DBEAFE',
+                                color: '#1D4ED8',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                border: '1px solid #BFDBFE'
+                              }}>
+                                💻 Online MCQ
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', color: '#64748B', fontSize: '0.825rem' }}>
+                            {reg.registeredAt ? new Date(reg.registeredAt).toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                            {reg.examMode === 'OMR' ? (
+                              <a
+                                href={`${API_BASE_URL}/admin/competitions/${selectedCompForRegs}/omr/template-personalized-pdf/${reg._id || reg.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-sm"
+                                style={{
+                                  background: '#7C3AED',
+                                  color: '#FFFFFF',
+                                  textDecoration: 'none',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  padding: '0.35rem 0.75rem'
+                                }}
+                              >
+                                📄 {t.downloadPersonalizedOmrBtn}
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                onClick={() => {
+                                  setSelectedCompForAttempts(selectedCompForRegs);
+                                  setActiveTab('attempts');
+                                  fetchAttempts(selectedCompForRegs);
+                                }}
+                                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                              >
+                                ⏱️ {t.tabAttempts}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ================= TAB 8: PROFILE & ACCOUNT SETTINGS ================= */}
+        {activeTab === 'profile' && (
+          <div>
+            <div style={{
+              background: '#FFFFFF',
+              borderRadius: 'var(--radius-card)',
+              border: '1px solid var(--color-border)',
+              padding: '2rem',
+              maxWidth: '720px',
+              margin: '0 auto',
+              boxShadow: 'var(--shadow-sm)'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '16px',
+                  background: user?.role === 'committee_head' ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)' : 'linear-gradient(135deg, #0645E5 0%, #3B82F6 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.75rem',
+                  color: '#FFFFFF',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.1)'
+                }}>
+                  {user?.role === 'committee_head' ? '👑' : '🛡️'}
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#101B35', margin: '0 0 0.25rem 0' }}>
+                    {t.accountDetailsTitle}
+                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{
+                      background: user?.role === 'committee_head' ? '#FEF3C7' : '#DBEAFE',
+                      color: user?.role === 'committee_head' ? '#92400E' : '#1E40AF',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: '6px'
+                    }}>
+                      {user?.role === 'committee_head' ? (t.roleCommitteeHead || 'Committee Head') : t.roleAdmin}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: '#10B981', fontWeight: 700 }}>
+                      ● {t.statusActive}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profile Details List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.925rem', marginBottom: '1.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>{lang === 'hi' ? 'अधिकारी का पूरा नाम' : 'Full Name'}:</span>
+                  <strong style={{ color: '#101B35' }}>{user?.fullName}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>{t.mobileLabel}:</span>
+                  <strong style={{ color: '#101B35' }}>{user?.mobileNormalized || user?.mobile}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>{t.designationLabel}:</span>
+                  <strong style={{ color: '#101B35' }}>{user?.classOrGrade || 'N/A'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>{t.schoolLabel}:</span>
+                  <strong style={{ color: '#101B35' }}>{user?.school || 'Education Committee'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>{lang === 'hi' ? 'प्रमाणन विधि' : 'Auth Security'}:</span>
+                  <span style={{ color: '#0645E5', fontWeight: 600 }}>HttpOnly Cookie (JWT)</span>
+                </div>
+              </div>
+
+              {/* Authority & Governance Box */}
+              <div style={{
+                background: user?.role === 'committee_head' ? '#FFFBEB' : '#F0F9FF',
+                border: user?.role === 'committee_head' ? '1px solid #FCD34D' : '1px solid #BAE6FD',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                marginBottom: '1.5rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '1.2rem' }}>{user?.role === 'committee_head' ? '👑' : '🛡️'}</span>
+                  <strong style={{ color: user?.role === 'committee_head' ? '#92400E' : '#0369A1', fontSize: '0.95rem' }}>
+                    {user?.role === 'committee_head' ? t.governanceOversightTitle : t.roleAdmin}
+                  </strong>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: user?.role === 'committee_head' ? '#78350F' : '#075985', margin: '0 0 0.85rem 0', lineHeight: 1.5 }}>
+                  {user?.role === 'committee_head' ? t.governanceNoticeHead : t.governanceNoticeAdmin}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  {user?.role === 'committee_head' ? (
+                    <>
+                      <div style={{ color: '#166534' }}>✓ {t.btnApprove}</div>
+                      <div style={{ color: '#166534' }}>✓ {t.btnRejectRevision}</div>
+                      <div style={{ color: '#166534' }}>✓ {t.btnPublishResults}</div>
+                      <div style={{ color: '#166534' }}>✓ {t.btnUnpublishResults}</div>
+                      <div style={{ color: '#166534' }}>✓ {t.togglePublicMeritList}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ color: '#1E40AF' }}>✓ {t.createCompetitionBtn}</div>
+                      <div style={{ color: '#1E40AF' }}>✓ {t.addQuestionBtn}</div>
+                      <div style={{ color: '#1E40AF' }}>✓ {t.tabAttempts}</div>
+                      <div style={{ color: '#1E40AF' }}>✓ {t.tabOmrVerification}</div>
+                      <div style={{ color: '#1E40AF' }}>✓ {t.btnEvaluate}</div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Navigation Shortcuts */}
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setActiveTab('competitions')}
+                >
+                  🏆 {t.tabCompetitions}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setActiveTab('registrations');
+                    if (selectedCompForRegs) fetchRegistrations(selectedCompForRegs);
+                  }}
+                >
+                  👥 {t.tabRegistrations}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setActiveTab('merit');
+                    if (selectedCompForMerit) fetchMerit(selectedCompForMerit);
+                  }}
+                >
+                  ⚖️ {t.meritList}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 

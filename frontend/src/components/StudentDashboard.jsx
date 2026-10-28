@@ -26,6 +26,7 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
   const [hallTicketModal, setHallTicketModal] = useState({ open: false, registration: null });
   const [scorecardModal, setScorecardModal] = useState({ open: false, result: null });
   const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // Live Countdown State for Primary Upcoming Exam
   const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isLive: false, hasUpcoming: false });
@@ -443,21 +444,30 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
               borderRadius: '9999px',
               border: '1px solid #E2E8F0'
             }}>
-              <div style={{
-                width: '30px',
-                height: '30px',
-                borderRadius: '50%',
-                background: '#0645E5',
-                color: '#FFFFFF',
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
+              <div
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  background: '#0645E5',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setProfileModalOpen(true)}
+                title={t.viewProfileDetails}
+              >
                 {user?.fullName ? user.fullName.charAt(0).toUpperCase() : 'S'}
               </div>
-              <span style={{ fontSize: '0.825rem', fontWeight: 700, color: '#101B35', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span
+                style={{ fontSize: '0.825rem', fontWeight: 700, color: '#101B35', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                onClick={() => setProfileModalOpen(true)}
+                title={t.viewProfileDetails}
+              >
                 {user?.fullName?.split(' ')[0] || 'Student'}
               </span>
               <button
@@ -553,19 +563,24 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
               {/* Avatar */}
-              <div style={{
-                width: '68px',
-                height: '68px',
-                borderRadius: '20px',
-                background: 'linear-gradient(135deg, #0645E5 0%, #3B82F6 100%)',
-                border: '3px solid rgba(255, 255, 255, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.85rem',
-                color: '#FFFFFF',
-                boxShadow: '0 8px 20px rgba(6, 69, 229, 0.35)'
-              }}>
+              <div
+                onClick={() => setProfileModalOpen(true)}
+                title={t.viewProfileDetails}
+                style={{
+                  width: '68px',
+                  height: '68px',
+                  borderRadius: '20px',
+                  background: 'linear-gradient(135deg, #0645E5 0%, #3B82F6 100%)',
+                  border: '3px solid rgba(255, 255, 255, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.85rem',
+                  color: '#FFFFFF',
+                  boxShadow: '0 8px 20px rgba(6, 69, 229, 0.35)',
+                  cursor: 'pointer'
+                }}
+              >
                 👨‍🎓
               </div>
 
@@ -2116,6 +2131,105 @@ export default function StudentDashboard({ user, onLogout, lang, setLang, t, onS
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: STUDENT PROFILE & ACCOUNT ================= */}
+      {profileModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(16, 27, 53, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 200,
+            padding: '1rem'
+          }}
+        >
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            width: '100%',
+            maxWidth: '520px',
+            padding: '2rem',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.85rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>👨‍🎓</span>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#101B35', margin: 0 }}>
+                  {t.studentProfileTitle}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#64748B' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{lang === 'hi' ? 'छात्र का पूरा नाम' : 'Full Name'}:</span>
+                <strong style={{ color: '#101B35' }}>{user?.fullName}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{t.mobileLabel}:</span>
+                <strong style={{ color: '#101B35' }}>{user?.mobileNormalized || user?.mobile}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{t.classLabel}:</span>
+                <strong style={{ color: '#0645E5' }}>{user?.classOrGrade}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{t.schoolLabel}:</span>
+                <strong style={{ color: '#101B35', textAlign: 'right', maxWidth: '280px' }}>{user?.school}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{t.accountStatus}:</span>
+                <span style={{ color: '#10B981', fontWeight: 700 }}>● {t.statusActive}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B' }}>{lang === 'hi' ? 'कुल पंजीकृत परीक्षाएं' : 'Registered Exams'}:</span>
+                <strong style={{ color: '#101B35' }}>{registrations.length}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                <span style={{ color: '#64748B' }}>{lang === 'hi' ? 'उपलब्ध स्कोरकार्ड' : 'Published Scorecards'}:</span>
+                <strong style={{ color: '#101B35' }}>{myResults.length}</strong>
+              </div>
+
+              <div style={{ background: '#EFF6FF', padding: '0.85rem', borderRadius: '10px', border: '1px solid #BFDBFE', marginTop: '0.5rem' }}>
+                <span style={{ color: '#1E40AF', fontSize: '0.8rem', display: 'block' }}>
+                  🔒 {t.securityNoticeText}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(false)}
+                style={{
+                  background: '#0645E5',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '0.55rem 1.4rem',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {lang === 'hi' ? 'बंद करें' : 'Close'}
+              </button>
+            </div>
           </div>
         </div>
       )}

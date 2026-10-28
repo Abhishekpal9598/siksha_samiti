@@ -38,7 +38,7 @@ export default function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const reqView = urlParams.get('view') || urlParams.get('preview');
       if (reqView === 'student' || reqView === 'student-dashboard') return 'student-dashboard';
-      if (reqView === 'admin' || reqView === 'admin-dashboard') return 'admin-dashboard';
+      if (reqView === 'admin' || reqView === 'admin-dashboard' || reqView === 'head' || reqView === 'committee-head') return 'admin-dashboard';
       return 'home';
     } catch {
       return 'home';
@@ -60,6 +60,30 @@ export default function App() {
           school: 'Saraswati Vidya Mandir Inter College',
           classOrGrade: 'Class 10th',
           role: 'student',
+          isActive: true
+        };
+      }
+      if (reqView === 'admin' || reqView === 'admin-dashboard') {
+        return {
+          id: 'demo-admin-001',
+          fullName: 'Dr. Rajesh Verma',
+          mobile: '9876543211',
+          mobileNormalized: '+91 98765 43211',
+          school: 'Kendriya Vidyalaya Command',
+          classOrGrade: 'Chief Examination Controller',
+          role: 'admin',
+          isActive: true
+        };
+      }
+      if (reqView === 'head' || reqView === 'committee-head') {
+        return {
+          id: 'demo-head-001',
+          fullName: 'Hon. Smt. Sunita Devi',
+          mobile: '9876543212',
+          mobileNormalized: '+91 98765 43212',
+          school: 'Education Committee Council',
+          classOrGrade: 'Committee President & Executive Authority',
+          role: 'committee_head',
           isActive: true
         };
       }
@@ -113,7 +137,7 @@ export default function App() {
         if (data.success && data.user) {
           setCurrentUser(data.user);
           // If already authenticated and not on a specific view, keep them on dashboard
-          if (data.user.role === 'admin') {
+          if (data.user.role === 'admin' || data.user.role === 'committee_head') {
             setView('admin-dashboard');
           } else if (data.user.role === 'student') {
             setView('student-dashboard');
@@ -205,8 +229,8 @@ export default function App() {
         setLoginModalState({ isOpen: true, targetRole: 'student' });
       }
     } else if (isAdminLogin) {
-      // If admin already logged in, navigate directly to dashboard
-      if (currentUser && currentUser.role === 'admin') {
+      // If admin or committee head already logged in, navigate directly to dashboard
+      if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'committee_head')) {
         setView('admin-dashboard');
       } else {
         setLoginModalState({ isOpen: true, targetRole: 'admin' });
@@ -230,7 +254,7 @@ export default function App() {
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
     setLoginModalState({ isOpen: false, targetRole: 'student' });
-    if (user.role === 'admin') {
+    if (user.role === 'admin' || user.role === 'committee_head') {
       setView('admin-dashboard');
     } else {
       setView('student-dashboard');
@@ -288,8 +312,8 @@ export default function App() {
     );
   }
 
-  // --- RENDER PROTECTED ADMIN DASHBOARD ---
-  if (view === 'admin-dashboard' && currentUser && currentUser.role === 'admin') {
+  // --- RENDER PROTECTED ADMIN / COMMITTEE HEAD DASHBOARD ---
+  if (view === 'admin-dashboard' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'committee_head')) {
     return (
       <AdminDashboard 
         user={currentUser}
@@ -307,7 +331,7 @@ export default function App() {
       {/* Session Active Top Notification Pill if logged in */}
       {currentUser && (
         <div style={{
-          background: currentUser.role === 'admin' ? '#0F172A' : '#1E40AF',
+          background: (currentUser.role === 'admin' || currentUser.role === 'committee_head') ? '#0F172A' : '#1E40AF',
           color: '#FFFFFF',
           padding: '0.4rem 1.25rem',
           fontSize: '0.825rem',
@@ -317,11 +341,17 @@ export default function App() {
           borderBottom: '1px solid rgba(255,255,255,0.2)'
         }}>
           <div>
-            <span>👤 {t.welcomeUser}, <strong>{currentUser.fullName}</strong> ({currentUser.role === 'admin' ? t.roleAdmin : t.roleStudent})</span>
+            <span>👤 {t.welcomeUser}, <strong>{currentUser.fullName}</strong> ({
+              currentUser.role === 'committee_head' 
+                ? (t.roleCommitteeHead || 'Committee Head') 
+                : currentUser.role === 'admin' 
+                ? t.roleAdmin 
+                : t.roleStudent
+            })</span>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <button
-              onClick={() => setView(currentUser.role === 'admin' ? 'admin-dashboard' : 'student-dashboard')}
+              onClick={() => setView((currentUser.role === 'admin' || currentUser.role === 'committee_head') ? 'admin-dashboard' : 'student-dashboard')}
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 border: 'none',
@@ -333,7 +363,9 @@ export default function App() {
                 fontWeight: 600
               }}
             >
-              📊 {currentUser.role === 'admin' ? t.dashboardAdminTitle : t.dashboardStudentTitle}
+              📊 {(currentUser.role === 'admin' || currentUser.role === 'committee_head') 
+                ? (currentUser.role === 'committee_head' ? (t.dashboardHeadTitle || 'Governance Dashboard') : t.dashboardAdminTitle) 
+                : t.dashboardStudentTitle}
             </button>
             <button
               onClick={handleLogout}
