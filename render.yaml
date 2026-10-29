@@ -1,0 +1,56 @@
+services:
+  # ==============================================================================
+  # 1. Node.js + Express Backend API
+  # ==============================================================================
+  - type: web
+    name: education-committee-backend
+    env: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: MONGODB_URI
+        sync: false # Set to your MongoDB Atlas SRV connection string
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OMR_INTERNAL_KEY
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        sync: false # Set to your Vercel URL (e.g. https://your-app.vercel.app)
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: OMR_SERVICE_URL
+        fromService:
+          type: web
+          name: education-committee-omr-service
+          property: host
+      - key: STORAGE_PROVIDER
+        value: local
+
+  # ==============================================================================
+  # 2. Python FastAPI + OpenCV OMR Vision Microservice
+  # ==============================================================================
+  - type: web
+    name: education-committee-omr-service
+    env: python
+    region: oregon
+    plan: free
+    rootDir: omr-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.14
+      - key: OMR_INTERNAL_KEY
+        fromService:
+          type: web
+          name: education-committee-backend
+          envVarKey: OMR_INTERNAL_KEY

@@ -27,9 +27,16 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || DEFAULT_DEV_JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   cookieName: process.env.COOKIE_NAME || 'auth_token',
+  cookieSameSite: process.env.COOKIE_SAME_SITE || (process.env.COOKIE_CROSS_SITE === 'true' ? 'none' : 'lax'),
   omrServiceUrl: process.env.OMR_SERVICE_URL || 'http://127.0.0.1:8001',
   omrInternalKey: process.env.OMR_INTERNAL_KEY || process.env.OMR_SERVICE_SECRET || DEFAULT_DEV_OMR_KEY,
-  omrStorageDir: process.env.OMR_STORAGE_DIR || path.resolve(__dirname, '../../storage/omr_private')
+  omrStorageDir: process.env.OMR_STORAGE_DIR || path.resolve(__dirname, '../../storage/omr_private'),
+  storageProvider: process.env.STORAGE_PROVIDER || 'local',
+  s3Bucket: process.env.S3_BUCKET || '',
+  s3Endpoint: process.env.S3_ENDPOINT || '',
+  s3Region: process.env.S3_REGION || 'auto',
+  s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+  s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || ''
 };
 
 // Safe origins parser

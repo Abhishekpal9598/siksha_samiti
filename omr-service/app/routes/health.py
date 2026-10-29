@@ -6,6 +6,14 @@ from ..security import verify_internal_key
 
 router = APIRouter(prefix="", tags=["Health"])
 
+@router.get("/healthz")
+def liveness_probe():
+    """
+    Public unauthenticated liveness probe for cloud platform health checkers (Render, Kubernetes).
+    Returns 200 OK without exposing system diagnostics.
+    """
+    return {"status": "ok", "service": "omr-service"}
+
 @router.get("/health", dependencies=[Depends(verify_internal_key)])
 def health_check():
     """
