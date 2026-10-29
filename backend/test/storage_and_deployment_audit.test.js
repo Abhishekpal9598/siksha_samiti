@@ -85,7 +85,25 @@ suite('Pre-Deployment Storage & Security Audit Tests', () => {
     assert.strictEqual(signed['content-type'], 'image/jpeg');
   });
 
-  test('S3CompatibleStorageProvider falls back safely to local storage when credentials missing', async () => {
+  test('signS3Request generates valid SigV4 headers for Supabase S3 endpoint', () => {
+    const supabaseEndpoint = 'https://myprojectref.supabase.co/storage/v1/s3';
+    const signed = signS3Request({
+      method: 'PUT',
+      url: `${supabaseEndpoint}/education-omr-private/scan_001.jpg`,
+      region: 'global',
+      accessKeyId: 'SUPABASE_S3_KEY_ID_EXAMPLE',
+      secretAccessKey: 'SUPABASE_S3_SECRET_KEY_EXAMPLE_ABCDEF',
+      bodyBuffer: Buffer.from('TEST_SUPABASE_OMR_SCAN_PAYLOAD'),
+      contentType: 'image/jpeg'
+    });
+
+    assert.ok(signed.Authorization.startsWith('AWS4-HMAC-SHA256 Credential=SUPABASE_S3_KEY_ID_EXAMPLE/'));
+    assert.ok(signed.Authorization.includes('/global/s3/aws4_request'));
+    assert.strictEqual(signed.host, 'myprojectref.supabase.co');
+    assert.ok(signed['x-amz-content-sha256']);
+  });
+
+  test('S3CompatibleStorageProvider strictly throws error when credentials missing (no silent fallback)', async () => {
     const provider = new S3CompatibleStorageProvider({
       bucket: '',
       endpoint: '',
@@ -94,17 +112,58 @@ suite('Pre-Deployment Storage & Security Audit Tests', () => {
       secretAccessKey: ''
     });
 
-    const testFile = 'fallback_test.jpg';
-    const testBuffer = Buffer.from('FALLBACK_DATA');
+    const testFile = 'test_scan.jpg';
+    const testBuffer = Buffer.from('DATA');
 
-    const result = await provider.saveFile({ filename: testFile, buffer: testBuffer });
-    assert.strictEqual(result.storageKey, testFile);
-    assert.strictEqual(result.provider, 'local');
+    await assert.rejects(
+      async () => provider.saveFile({ filename: testFile, buffer: testBuffer }),
+      (err) => {
+        assert.strictEqual(err.code, 'S3_CREDENTIALS_MISSING');
+        assert.ok(err.message.includes('Required credentials are missing'));
+        return true;
+      }
+    );
 
-    const exists = await provider.fileExists(testFile);
-    assert.strictEqual(exists, true);
+    await assert.rejects(
+      async () => provider.getFileBuffer(testFile),
+      (err) => {
+        assert.strictEqual(err.code, 'S3_CREDENTIALS_MISSING');
+        return true;
+      }
+    );
 
-    await provider.deleteFile(testFile);
+    await assert.rejects(
+      async () => provider.deleteFile(testFile),
+      (err) => {
+        assert.strictEqual(err.code, 'S3_CREDENTIALS_MISSING');
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      async () => provider.fileExists(testFile),
+      (err) => {
+        assert.strictEqual(err.code, 'S3_CREDENTIALS_MISSING');
+        return true;
+      }
+    );
+  });
+
+  test('createStorageProvider strictly throws error when STORAGE_PROVIDER=s3 and credentials missing', () => {
+    assert.throws(
+      () => createStorageProvider({
+        storageProvider: 's3',
+        s3Bucket: '',
+        s3Endpoint: '',
+        s3AccessKeyId: '',
+        s3SecretAccessKey: ''
+      }),
+      (err) => {
+        assert.strictEqual(err.code, 'STORAGE_CONFIG_ERROR');
+        assert.ok(err.message.includes('Silent fallback to local storage is strictly disabled'));
+        return true;
+      }
+    );
   });
 
   // 3. Environment Security Validator (validateProductionEnv)

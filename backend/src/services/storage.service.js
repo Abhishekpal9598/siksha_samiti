@@ -157,19 +157,27 @@ export class S3CompatibleStorageProvider {
     this.secretAccessKey = secretAccessKey;
   }
 
+  _assertCredentials() {
+    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
+      const missing = [];
+      if (!this.bucket) missing.push('S3_BUCKET');
+      if (!this.endpoint) missing.push('S3_ENDPOINT');
+      if (!this.accessKeyId) missing.push('S3_ACCESS_KEY_ID');
+      if (!this.secretAccessKey) missing.push('S3_SECRET_ACCESS_KEY');
+      const err = new Error(`S3_CREDENTIALS_MISSING: Cannot perform S3 operation. Required credentials are missing: ${missing.join(', ')}.`);
+      err.code = 'S3_CREDENTIALS_MISSING';
+      throw err;
+    }
+  }
+
   _getObjectUrl(key) {
     const sanitizedKey = path.basename(key);
     return `${this.endpoint}/${this.bucket}/${sanitizedKey}`;
   }
 
   async saveFile({ filename, buffer, mimeType = 'application/octet-stream' }) {
+    this._assertCredentials();
     const sanitizedKey = path.basename(filename);
-
-    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
-      console.warn('[STORAGE] S3 credentials incomplete. Falling back to local private storage.');
-      const localFallback = new LocalStorageProvider(config.omrStorageDir);
-      return await localFallback.saveFile({ filename: sanitizedKey, buffer });
-    }
 
     const url = this._getObjectUrl(sanitizedKey);
     const headers = signS3Request({
@@ -202,12 +210,8 @@ export class S3CompatibleStorageProvider {
   }
 
   async getFileBuffer(storageKey) {
+    this._assertCredentials();
     const sanitizedKey = path.basename(storageKey);
-
-    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
-      const localFallback = new LocalStorageProvider(config.omrStorageDir);
-      return await localFallback.getFileBuffer(sanitizedKey);
-    }
 
     const url = this._getObjectUrl(sanitizedKey);
     const headers = signS3Request({
@@ -236,12 +240,8 @@ export class S3CompatibleStorageProvider {
   }
 
   async deleteFile(storageKey) {
+    this._assertCredentials();
     const sanitizedKey = path.basename(storageKey);
-
-    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
-      const localFallback = new LocalStorageProvider(config.omrStorageDir);
-      return await localFallback.deleteFile(sanitizedKey);
-    }
 
     const url = this._getObjectUrl(sanitizedKey);
     const headers = signS3Request({
@@ -261,12 +261,8 @@ export class S3CompatibleStorageProvider {
   }
 
   async fileExists(storageKey) {
+    this._assertCredentials();
     const sanitizedKey = path.basename(storageKey);
-
-    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
-      const localFallback = new LocalStorageProvider(config.omrStorageDir);
-      return await localFallback.fileExists(sanitizedKey);
-    }
 
     const url = this._getObjectUrl(sanitizedKey);
     const headers = signS3Request({
@@ -291,11 +287,23 @@ export const createStorageProvider = (customConfig = null) => {
   const currentConfig = customConfig || config;
   const providerType = (currentConfig.storageProvider || 'local').toLowerCase();
 
-  if (providerType === 's3' && currentConfig.s3Bucket) {
+  if (providerType === 's3') {
+    const missing = [];
+    if (!currentConfig.s3Bucket) missing.push('S3_BUCKET');
+    if (!currentConfig.s3Endpoint) missing.push('S3_ENDPOINT');
+    if (!currentConfig.s3AccessKeyId) missing.push('S3_ACCESS_KEY_ID');
+    if (!currentConfig.s3SecretAccessKey) missing.push('S3_SECRET_ACCESS_KEY');
+
+    if (missing.length > 0) {
+      const err = new Error(`STORAGE_CONFIG_ERROR: STORAGE_PROVIDER is 's3' but required S3 credentials are missing: ${missing.join(', ')}. Silent fallback to local storage is strictly disabled.`);
+      err.code = 'STORAGE_CONFIG_ERROR';
+      throw err;
+    }
+
     return new S3CompatibleStorageProvider({
       bucket: currentConfig.s3Bucket,
       endpoint: currentConfig.s3Endpoint,
-      region: currentConfig.s3Region,
+      region: currentConfig.s3Region || 'auto',
       accessKeyId: currentConfig.s3AccessKeyId,
       secretAccessKey: currentConfig.s3SecretAccessKey
     });

@@ -313,8 +313,6 @@ export async function ingestOmrFile({
     filename: storedFilename,
     buffer: file.buffer,
     mimeType: magicValidation.mimeType
-  }).catch(err => {
-    console.warn('[STORAGE] S3 save warning (relying on local storage):', err.message);
   });
 
   try {

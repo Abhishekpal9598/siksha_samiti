@@ -285,7 +285,9 @@ export async function downloadPrivateOmrScan(req, res, next) {
     let fileBuffer = null;
     const absoluteFilePath = resolveSafeStoragePath(submission.storedFilename);
 
-    if (fs.existsSync(absoluteFilePath)) {
+    if (config.storageProvider === 's3') {
+      fileBuffer = await objectStorage.getFileBuffer(submission.storedFilename);
+    } else if (fs.existsSync(absoluteFilePath)) {
       fileBuffer = fs.readFileSync(absoluteFilePath);
     } else if (await objectStorage.fileExists(submission.storedFilename)) {
       fileBuffer = await objectStorage.getFileBuffer(submission.storedFilename);
@@ -522,7 +524,9 @@ export async function downloadAlignedOmrScan(req, res, next) {
     let fileBuffer = null;
     const absoluteFilePath = resolveSafeStoragePath(submission.alignedFilename);
 
-    if (fs.existsSync(absoluteFilePath)) {
+    if (config.storageProvider === 's3') {
+      fileBuffer = await objectStorage.getFileBuffer(submission.alignedFilename);
+    } else if (fs.existsSync(absoluteFilePath)) {
       fileBuffer = fs.readFileSync(absoluteFilePath);
     } else if (await objectStorage.fileExists(submission.alignedFilename)) {
       fileBuffer = await objectStorage.getFileBuffer(submission.alignedFilename);
