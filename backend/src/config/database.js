@@ -4,10 +4,13 @@ import { config } from './env.js';
 export const connectDB = async () => {
   try {
     const conn = await mongoose.connect(config.mongodbUri, {
+      maxPoolSize: config.mongodbMaxPoolSize,
+      minPoolSize: config.mongodbMinPoolSize,
+      socketTimeoutMS: 45000,
       serverSelectionTimeoutMS: 5000
     });
 
-    console.log(`[INFO] MongoDB Connected: ${conn.connection.host}:${conn.connection.port}/${conn.connection.name}`);
+    console.log(`[INFO] MongoDB Connected: ${conn.connection.host}:${conn.connection.port}/${conn.connection.name} (pool: min=${config.mongodbMinPoolSize}, max=${config.mongodbMaxPoolSize})`);
     return conn;
   } catch (error) {
     console.error(`[ERROR] MongoDB Connection Error: ${error.message}`);

@@ -1,5 +1,5 @@
 import app from './app.js';
-import { config } from './config/env.js';
+import { config, validateProductionEnv } from './config/env.js';
 import { connectDB, disconnectDB } from './config/database.js';
 import { startAttemptExpirySweeper, stopAttemptExpirySweeper, sweepExpiredAttempts } from './services/examSweeper.service.js';
 
@@ -7,6 +7,9 @@ let server;
 
 const startServer = async () => {
   try {
+    // 0. Production Environment Security Validation
+    validateProductionEnv();
+
     // 1. Connect to MongoDB
     await connectDB();
 

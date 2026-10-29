@@ -30,8 +30,24 @@ const loginLimiter = rateLimit({
   })
 });
 
+// Registration rate limiter: 20 registrations per 15 min per IP to prevent spamming
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 1000 : 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: (req) => ({
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many registration attempts. Please try again after 15 minutes.',
+      details: [],
+      requestId: req.id
+    }
+  })
+});
+
 // 1. Public Student Registration
-router.post('/register', registerStudent);
+router.post('/register', registerLimiter, registerStudent);
 
 // 2. Authentication (Student & Admin)
 router.post('/login', loginLimiter, login);

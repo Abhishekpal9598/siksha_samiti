@@ -129,6 +129,12 @@ export async function alignOmrScan({ inputPath, outputPath }) {
       timeoutErr.statusCode = 504;
       throw timeoutErr;
     }
+    if (err.cause?.code === 'ECONNREFUSED' || err.code === 'ECONNREFUSED' || err.message?.includes('fetch failed')) {
+      const connErr = new Error(`OMR alignment microservice is unreachable at ${config.omrServiceUrl}. Please verify microservice process.`);
+      connErr.code = 'OMR_SERVICE_UNAVAILABLE';
+      connErr.statusCode = 503;
+      throw connErr;
+    }
     throw err;
   }
 }
@@ -180,6 +186,12 @@ export async function detectOmrBubbles({ alignedPath, totalQuestions = 50 }) {
       timeoutErr.code = 'OMR_SERVICE_TIMEOUT';
       timeoutErr.statusCode = 504;
       throw timeoutErr;
+    }
+    if (err.cause?.code === 'ECONNREFUSED' || err.code === 'ECONNREFUSED' || err.message?.includes('fetch failed')) {
+      const connErr = new Error(`OMR bubble detection microservice is unreachable at ${config.omrServiceUrl}. Please verify microservice process.`);
+      connErr.code = 'OMR_SERVICE_UNAVAILABLE';
+      connErr.statusCode = 503;
+      throw connErr;
     }
     throw err;
   }

@@ -226,4 +226,8 @@ test('=== PHASE 7: FRONTEND INTEGRATION & REGISTRATION AUDIT ===', async (suite)
 
     assert.equal(res.status, 401);
   });
+
+  suite.after(async () => {
+    await mongoose.disconnect();
+  });
 });
