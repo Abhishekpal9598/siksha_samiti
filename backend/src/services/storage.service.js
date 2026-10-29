@@ -14,7 +14,7 @@ import { config } from '../config/env.js';
  *    using Cloudflare R2, AWS S3, Supabase Storage, or Backblaze B2.
  */
 
-class LocalStorageProvider {
+export class LocalStorageProvider {
   constructor(baseDir) {
     this.baseDir = path.resolve(baseDir);
     this._ensureDir();
@@ -77,69 +77,231 @@ class LocalStorageProvider {
   }
 }
 
-class S3CompatibleStorageProvider {
+/**
+ * Computes AWS Signature Version 4 signing key
+ */
+function getSignatureKey(key, dateStamp, regionName, serviceName) {
+  const kDate = crypto.createHmac('sha256', 'AWS4' + key).update(dateStamp).digest();
+  const kRegion = crypto.createHmac('sha256', kDate).update(regionName).digest();
+  const kService = crypto.createHmac('sha256', kRegion).update(serviceName).digest();
+  const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+  return kSigning;
+}
+
+/**
+ * Signs an HTTP request using AWS Signature Version 4 for S3-compatible APIs.
+ */
+export function signS3Request({
+  method,
+  url,
+  region = 'auto',
+  accessKeyId,
+  secretAccessKey,
+  bodyBuffer = null,
+  contentType = null
+}) {
+  const parsedUrl = new URL(url);
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.substring(0, 8);
+  const payloadHash = crypto.createHash('sha256').update(bodyBuffer || Buffer.alloc(0)).digest('hex');
+
+  const headers = {
+    host: parsedUrl.host,
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': payloadHash
+  };
+
+  if (contentType) {
+    headers['content-type'] = contentType;
+  }
+
+  const headerKeys = Object.keys(headers).sort();
+  const canonicalHeaders = headerKeys.map(k => `${k}:${headers[k]}\n`).join('');
+  const signedHeaders = headerKeys.join(';');
+
+  const canonicalRequest = [
+    method.toUpperCase(),
+    parsedUrl.pathname,
+    parsedUrl.search ? parsedUrl.search.substring(1) : '',
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex')
+  ].join('\n');
+
+  const signingKey = getSignatureKey(secretAccessKey, dateStamp, region, 's3');
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+
+  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return {
+    ...headers,
+    Authorization: authorization
+  };
+}
+
+export class S3CompatibleStorageProvider {
   constructor({ bucket, endpoint, region, accessKeyId, secretAccessKey }) {
     this.bucket = bucket;
-    this.endpoint = endpoint;
+    this.endpoint = (endpoint || '').replace(/\/$/, '');
     this.region = region || 'auto';
     this.accessKeyId = accessKeyId;
     this.secretAccessKey = secretAccessKey;
   }
 
-  async saveFile({ filename, buffer, mimeType }) {
+  _getObjectUrl(key) {
+    const sanitizedKey = path.basename(key);
+    return `${this.endpoint}/${this.bucket}/${sanitizedKey}`;
+  }
+
+  async saveFile({ filename, buffer, mimeType = 'application/octet-stream' }) {
     const sanitizedKey = path.basename(filename);
-    
-    // In environments with S3 credentials configured, upload to S3-compatible endpoint
-    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket) {
-      console.warn('[STORAGE] S3 credentials incomplete. Falling back to local temporary storage.');
+
+    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
+      console.warn('[STORAGE] S3 credentials incomplete. Falling back to local private storage.');
       const localFallback = new LocalStorageProvider(config.omrStorageDir);
-      return await localFallback.saveFile({ filename, buffer });
+      return await localFallback.saveFile({ filename: sanitizedKey, buffer });
     }
 
-    // Direct S3 REST / Signature V4 upload or SDK integration
-    const url = `${this.endpoint.replace(/\/$/, '')}/${this.bucket}/${sanitizedKey}`;
-    console.log(`[STORAGE] Uploading private scan to S3-compatible object storage: ${sanitizedKey}`);
-    
+    const url = this._getObjectUrl(sanitizedKey);
+    const headers = signS3Request({
+      method: 'PUT',
+      url,
+      region: this.region,
+      accessKeyId: this.accessKeyId,
+      secretAccessKey: this.secretAccessKey,
+      bodyBuffer: buffer,
+      contentType: mimeType
+    });
+
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: buffer
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`S3 upload failed with HTTP ${res.status}: ${errText || res.statusText}`);
+    }
+
     return {
       storageKey: sanitizedKey,
-      storagePath: url,
+      storagePath: sanitizedKey,
       sizeBytes: buffer.length,
       provider: 's3'
     };
   }
 
   async getFileBuffer(storageKey) {
-    // Retrieval through S3 REST or local fallback
-    const localFallback = new LocalStorageProvider(config.omrStorageDir);
-    return await localFallback.getFileBuffer(storageKey);
+    const sanitizedKey = path.basename(storageKey);
+
+    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
+      const localFallback = new LocalStorageProvider(config.omrStorageDir);
+      return await localFallback.getFileBuffer(sanitizedKey);
+    }
+
+    const url = this._getObjectUrl(sanitizedKey);
+    const headers = signS3Request({
+      method: 'GET',
+      url,
+      region: this.region,
+      accessKeyId: this.accessKeyId,
+      secretAccessKey: this.secretAccessKey
+    });
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers
+    });
+
+    if (res.status === 404) {
+      return null;
+    }
+
+    if (!res.ok) {
+      throw new Error(`S3 download failed with HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   async deleteFile(storageKey) {
-    const localFallback = new LocalStorageProvider(config.omrStorageDir);
-    return await localFallback.deleteFile(storageKey);
+    const sanitizedKey = path.basename(storageKey);
+
+    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
+      const localFallback = new LocalStorageProvider(config.omrStorageDir);
+      return await localFallback.deleteFile(sanitizedKey);
+    }
+
+    const url = this._getObjectUrl(sanitizedKey);
+    const headers = signS3Request({
+      method: 'DELETE',
+      url,
+      region: this.region,
+      accessKeyId: this.accessKeyId,
+      secretAccessKey: this.secretAccessKey
+    });
+
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers
+    });
+
+    return res.status === 204 || res.status === 200 || res.status === 404;
   }
 
   async fileExists(storageKey) {
-    const localFallback = new LocalStorageProvider(config.omrStorageDir);
-    return await localFallback.fileExists(storageKey);
+    const sanitizedKey = path.basename(storageKey);
+
+    if (!this.accessKeyId || !this.secretAccessKey || !this.bucket || !this.endpoint) {
+      const localFallback = new LocalStorageProvider(config.omrStorageDir);
+      return await localFallback.fileExists(sanitizedKey);
+    }
+
+    const url = this._getObjectUrl(sanitizedKey);
+    const headers = signS3Request({
+      method: 'HEAD',
+      url,
+      region: this.region,
+      accessKeyId: this.accessKeyId,
+      secretAccessKey: this.secretAccessKey
+    });
+
+    const res = await fetch(url, {
+      method: 'HEAD',
+      headers
+    });
+
+    return res.status === 200;
   }
 }
 
 // Active provider factory
-const createStorageProvider = () => {
-  const providerType = (config.storageProvider || 'local').toLowerCase();
+export const createStorageProvider = (customConfig = null) => {
+  const currentConfig = customConfig || config;
+  const providerType = (currentConfig.storageProvider || 'local').toLowerCase();
 
-  if (providerType === 's3' && config.s3Bucket) {
+  if (providerType === 's3' && currentConfig.s3Bucket) {
     return new S3CompatibleStorageProvider({
-      bucket: config.s3Bucket,
-      endpoint: config.s3Endpoint,
-      region: config.s3Region,
-      accessKeyId: config.s3AccessKeyId,
-      secretAccessKey: config.s3SecretAccessKey
+      bucket: currentConfig.s3Bucket,
+      endpoint: currentConfig.s3Endpoint,
+      region: currentConfig.s3Region,
+      accessKeyId: currentConfig.s3AccessKeyId,
+      secretAccessKey: currentConfig.s3SecretAccessKey
     });
   }
 
-  return new LocalStorageProvider(config.omrStorageDir);
+  return new LocalStorageProvider(currentConfig.omrStorageDir);
 };
 
 export const storage = createStorageProvider();

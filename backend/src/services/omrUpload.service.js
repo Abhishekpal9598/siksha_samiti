@@ -7,6 +7,7 @@ import { Registration } from '../models/registration.model.js';
 import { Attempt } from '../models/attempt.model.js';
 import { User } from '../models/user.model.js';
 import { verifyOmrTokenPayload } from './omrToken.service.js';
+import { storage } from './storage.service.js';
 
 // Maximum limits
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
@@ -308,6 +309,13 @@ export async function ingestOmrFile({
   const storagePath = resolveSafeStoragePath(storedFilename);
 
   fs.writeFileSync(storagePath, file.buffer, { mode: 0o600 });
+  await storage.saveFile({
+    filename: storedFilename,
+    buffer: file.buffer,
+    mimeType: magicValidation.mimeType
+  }).catch(err => {
+    console.warn('[STORAGE] S3 save warning (relying on local storage):', err.message);
+  });
 
   try {
     // 7. Create OmrSubmission record in MongoDB
@@ -363,7 +371,7 @@ export async function ingestOmrFile({
     await submission.save();
     return submission;
   } catch (dbErr) {
-    // Clean up private file on disk if database insertion fails
+    // Clean up private file on disk and object storage if database insertion fails
     if (fs.existsSync(storagePath)) {
       try {
         fs.unlinkSync(storagePath);
@@ -371,6 +379,7 @@ export async function ingestOmrFile({
         // ignore disk cleanup error
       }
     }
+    await storage.deleteFile(storedFilename).catch(() => {});
 
     if (dbErr.code === 11000) {
       const isFileHash = dbErr.keyPattern && dbErr.keyPattern.fileHash;

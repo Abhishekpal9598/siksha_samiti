@@ -24,6 +24,9 @@ const hasFrontendDist = fs.existsSync(frontendDistPath);
 
 const app = express();
 
+// Trust reverse proxy (Render, Vercel, Cloudflare, AWS ALB) for secure cookies and accurate client IP
+app.set('trust proxy', 1);
+
 // 1. Request ID middleware
 app.use(requestIdMiddleware);
 

@@ -60,7 +60,12 @@ export const validateProductionEnv = (overrideEnv = null) => {
     JWT_SECRET: config.jwtSecret,
     OMR_INTERNAL_KEY: config.omrInternalKey,
     CLIENT_ORIGIN: config.clientOrigin,
-    MONGODB_URI: config.mongodbUri
+    MONGODB_URI: config.mongodbUri,
+    STORAGE_PROVIDER: config.storageProvider,
+    S3_BUCKET: config.s3Bucket,
+    S3_ENDPOINT: config.s3Endpoint,
+    S3_ACCESS_KEY_ID: config.s3AccessKeyId,
+    S3_SECRET_ACCESS_KEY: config.s3SecretAccessKey
   };
 
   const isProduction = currentEnv.NODE_ENV === 'production';
@@ -96,6 +101,18 @@ export const validateProductionEnv = (overrideEnv = null) => {
   const mongoUri = currentEnv.MONGODB_URI || '';
   if (!mongoUri || (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://'))) {
     errors.push('MONGODB_URI must be a valid mongodb:// or mongodb+srv:// connection URI.');
+  }
+
+  // 5. Cloud S3 Storage credentials validation (when STORAGE_PROVIDER is s3)
+  if (currentEnv.STORAGE_PROVIDER === 's3') {
+    const missingS3 = [];
+    if (!currentEnv.S3_BUCKET) missingS3.push('S3_BUCKET');
+    if (!currentEnv.S3_ENDPOINT) missingS3.push('S3_ENDPOINT');
+    if (!currentEnv.S3_ACCESS_KEY_ID) missingS3.push('S3_ACCESS_KEY_ID');
+    if (!currentEnv.S3_SECRET_ACCESS_KEY) missingS3.push('S3_SECRET_ACCESS_KEY');
+    if (missingS3.length > 0) {
+      errors.push(`STORAGE_PROVIDER is set to 's3' but required S3 credentials are missing: ${missingS3.join(', ')}.`);
+    }
   }
 
   if (errors.length > 0) {

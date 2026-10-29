@@ -153,11 +153,13 @@ export const login = async (req, res, next) => {
     // 7. Set secure cookies
     const isProd = config.nodeEnv === 'production';
     const sameSitePolicy = config.cookieSameSite || 'lax';
+    // Browsers mandate Secure=true whenever SameSite=None
+    const isSecure = isProd || sameSitePolicy === 'none';
     
     // Primary session cookie (HttpOnly, inaccessible to JavaScript)
     res.cookie(config.cookieName, token, {
       httpOnly: true,
-      secure: isProd,
+      secure: isSecure,
       sameSite: sameSitePolicy,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/'
@@ -166,7 +168,7 @@ export const login = async (req, res, next) => {
     // CSRF Double-Submit cookie (readable by frontend client to send in X-CSRF-Token header)
     res.cookie('csrf_token', csrfToken, {
       httpOnly: false,
-      secure: isProd,
+      secure: isSecure,
       sameSite: sameSitePolicy,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/'
@@ -233,16 +235,17 @@ export const logout = async (req, res, next) => {
     // 3. Clear session and CSRF cookies
     const isProd = config.nodeEnv === 'production';
     const sameSitePolicy = config.cookieSameSite || 'lax';
+    const isSecure = isProd || sameSitePolicy === 'none';
     res.clearCookie(config.cookieName, {
       httpOnly: true,
-      secure: isProd,
+      secure: isSecure,
       sameSite: sameSitePolicy,
       path: '/'
     });
 
     res.clearCookie('csrf_token', {
       httpOnly: false,
-      secure: isProd,
+      secure: isSecure,
       sameSite: sameSitePolicy,
       path: '/'
     });

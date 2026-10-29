@@ -12,6 +12,7 @@ import {
   MAX_BATCH_SIZE
 } from '../services/omrUpload.service.js';
 import { alignOmrScan, detectOmrBubbles } from '../services/omrClient.service.js';
+import { storage as objectStorage } from '../services/storage.service.js';
 
 // Multer memory storage configuration for secure pre-ingestion validation
 const storage = multer.memoryStorage();
@@ -280,10 +281,17 @@ export async function downloadPrivateOmrScan(req, res, next) {
       });
     }
 
-    // Path traversal check
+    // Retrieve file buffer safely via object storage abstraction or local filesystem fallback
+    let fileBuffer = null;
     const absoluteFilePath = resolveSafeStoragePath(submission.storedFilename);
 
-    if (!fs.existsSync(absoluteFilePath)) {
+    if (fs.existsSync(absoluteFilePath)) {
+      fileBuffer = fs.readFileSync(absoluteFilePath);
+    } else if (await objectStorage.fileExists(submission.storedFilename)) {
+      fileBuffer = await objectStorage.getFileBuffer(submission.storedFilename);
+    }
+
+    if (!fileBuffer) {
       return res.status(404).json({
         error: {
           code: 'FILE_NOT_FOUND_ON_DISK',
@@ -294,17 +302,16 @@ export async function downloadPrivateOmrScan(req, res, next) {
       });
     }
 
-    // Set secure headers
+    // Set secure headers (no caching of sensitive exam scans)
     res.setHeader('Content-Type', submission.mimeType);
-    res.setHeader('Content-Length', submission.fileSizeBytes);
+    res.setHeader('Content-Length', fileBuffer.length);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(submission.originalFilename)}"`);
     res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    const readStream = fs.createReadStream(absoluteFilePath);
-    readStream.pipe(res);
+    res.send(fileBuffer);
   } catch (error) {
     next(error);
   }
@@ -512,9 +519,16 @@ export async function downloadAlignedOmrScan(req, res, next) {
       });
     }
 
+    let fileBuffer = null;
     const absoluteFilePath = resolveSafeStoragePath(submission.alignedFilename);
 
-    if (!fs.existsSync(absoluteFilePath)) {
+    if (fs.existsSync(absoluteFilePath)) {
+      fileBuffer = fs.readFileSync(absoluteFilePath);
+    } else if (await objectStorage.fileExists(submission.alignedFilename)) {
+      fileBuffer = await objectStorage.getFileBuffer(submission.alignedFilename);
+    }
+
+    if (!fileBuffer) {
       return res.status(404).json({
         error: {
           code: 'FILE_NOT_FOUND_ON_DISK',
@@ -525,18 +539,15 @@ export async function downloadAlignedOmrScan(req, res, next) {
       });
     }
 
-    const stat = fs.statSync(absoluteFilePath);
-
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Length', fileBuffer.length);
     res.setHeader('Content-Disposition', `inline; filename="aligned_${submission._id}.png"`);
     res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    const readStream = fs.createReadStream(absoluteFilePath);
-    readStream.pipe(res);
+    res.send(fileBuffer);
   } catch (error) {
     next(error);
   }
