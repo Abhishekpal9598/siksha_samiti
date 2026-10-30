@@ -1,4 +1,4 @@
-import { config, getAllowedOrigins } from '../config/env.js';
+import { config, isOriginAllowed } from '../config/env.js';
 
 /**
  * CSRF Protection Middleware:
@@ -39,13 +39,11 @@ export const csrfProtection = (req, res, next) => {
 
   // If request has an active session cookie, enforce strict CSRF protection
   if (hasAuthCookie) {
-    const allowedOrigins = getAllowedOrigins();
-
     // 1. Origin / Referer Validation
     const origin = req.headers.origin;
     if (origin) {
-      const isAllowedOrigin = allowedOrigins.includes(origin) || allowedOrigins.includes('*');
-      if (!isAllowedOrigin) {
+      const isAllowed = isOriginAllowed(origin);
+      if (!isAllowed) {
         return res.status(403).json({
           error: {
             code: 'CSRF_ERROR',

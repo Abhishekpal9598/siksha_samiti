@@ -54,14 +54,19 @@ export default function LoginModal({
         })
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        // Non-JSON response (e.g. gateway error)
+      }
 
       if (!response.ok) {
         throw new Error(data.error?.message || t.loginErrorGeneric);
       }
 
       // Check role authorization on the specific login modal
-      if (isAdmin && data.user.role !== 'admin' && data.user.role !== 'committee_head') {
+      if (isAdmin && data.user?.role !== 'admin' && data.user?.role !== 'committee_head') {
         // A student attempted to log into the Admin Portal
         // Immediately revoke session cookie
         await fetch(`${API_BASE_URL}/auth/logout`, {
@@ -77,9 +82,10 @@ export default function LoginModal({
       setStatus({ loading: false, error: null });
       onSuccess(data.user);
     } catch (err) {
+      const isNetworkErr = err.message === 'Failed to fetch' || err.name === 'TypeError';
       setStatus({
         loading: false,
-        error: err.message
+        error: isNetworkErr ? (t.networkConnectionError || err.message) : err.message
       });
     }
   };

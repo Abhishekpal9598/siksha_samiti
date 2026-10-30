@@ -43,8 +43,33 @@ export const config = {
 export const getAllowedOrigins = () => {
   return config.clientOrigin
     .split(',')
-    .map(origin => origin.trim())
+    .map(origin => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
+};
+
+/**
+ * Checks if an incoming request origin matches the allowed CORS origins.
+ * Supports exact origin matches and wildcard subdomains (e.g. https://*.vercel.app).
+ * Automatically normalizes trailing slashes.
+ */
+export const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  const cleanOrigin = origin.trim().replace(/\/+$/, '');
+  const allowedOrigins = getAllowedOrigins();
+
+  if (config.nodeEnv !== 'production' && allowedOrigins.includes('*')) {
+    return true;
+  }
+
+  return allowedOrigins.some(allowed => {
+    if (allowed === cleanOrigin) return true;
+    // Support wildcard patterns e.g. https://*.vercel.app
+    if (allowed.includes('*')) {
+      const regex = new RegExp('^' + allowed.replace(/[-[\]/{}()+?.\\^$|]/g, '\\$&').replace('\\*', '.*') + '$');
+      return regex.test(cleanOrigin);
+    }
+    return false;
+  });
 };
 
 /**

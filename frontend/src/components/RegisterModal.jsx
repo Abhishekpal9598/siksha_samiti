@@ -48,7 +48,12 @@ export default function RegisterModal({ isOpen, onClose, t, lang }) {
         body: JSON.stringify(formData)
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        // Non-JSON response
+      }
 
       if (!response.ok) {
         throw new Error(data.error?.message || (lang === 'hi' ? 'पंजीकरण विफल रहा।' : 'Registration failed.'));
@@ -60,9 +65,13 @@ export default function RegisterModal({ isOpen, onClose, t, lang }) {
         successData: data.user
       });
     } catch (err) {
+      const isNetworkErr = err.message === 'Failed to fetch' || err.name === 'TypeError';
+      const fallbackMsg = lang === 'hi'
+        ? 'सर्वर से संपर्क नहीं हो सका। कृपया इंटरनेट कनेक्शन अथवा Render CORS जांचें।'
+        : 'Cannot connect to server. Please check your internet connection or verify CORS on Render.';
       setStatus({
         loading: false,
-        error: err.message,
+        error: isNetworkErr ? fallbackMsg : err.message,
         successData: null
       });
     }

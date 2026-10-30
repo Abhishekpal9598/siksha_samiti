@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { config, getAllowedOrigins } from './config/env.js';
+import { config, getAllowedOrigins, isOriginAllowed } from './config/env.js';
 import { requestIdMiddleware } from './middlewares/requestId.js';
 import { csrfProtection } from './middlewares/csrf.middleware.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
@@ -42,14 +42,12 @@ app.use(
 );
 
 // 4. CORS configuration
-const allowedOrigins = getAllowedOrigins();
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps, curl, or server-to-server)
       if (!origin) return callback(null, true);
-      // In production, wildcards are strictly disallowed with credentials
-      if (allowedOrigins.includes(origin) || (config.nodeEnv !== 'production' && allowedOrigins.includes('*'))) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
       const err = new Error(`Origin ${origin} not allowed by CORS policy`);
