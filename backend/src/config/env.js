@@ -61,15 +61,30 @@ export const isOriginAllowed = (origin) => {
     return true;
   }
 
-  return allowedOrigins.some(allowed => {
+  // 1. Check explicit matches or wildcard patterns configured in CLIENT_ORIGIN
+  const isExplicit = allowedOrigins.some(allowed => {
     if (allowed === cleanOrigin) return true;
-    // Support wildcard patterns e.g. https://*.vercel.app
+    // Support wildcard patterns e.g. https://*.vercel.app or https://*.yourdomain.com
     if (allowed.includes('*')) {
       const regex = new RegExp('^' + allowed.replace(/[-[\]/{}()+?.\\^$|]/g, '\\$&').replace('\\*', '.*') + '$');
       return regex.test(cleanOrigin);
     }
     return false;
   });
+
+  if (isExplicit) return true;
+
+  // 2. Automatically permit all secure Vercel deployments (*.vercel.app)
+  if (/^https:\/\/[a-z0-9-_.]+\.vercel\.app$/i.test(cleanOrigin)) {
+    return true;
+  }
+
+  // 3. Automatically permit local development hosts
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin)) {
+    return true;
+  }
+
+  return false;
 };
 
 /**

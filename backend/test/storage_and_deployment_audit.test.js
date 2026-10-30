@@ -8,7 +8,7 @@ import {
   signS3Request,
   createStorageProvider
 } from '../src/services/storage.service.js';
-import { validateProductionEnv } from '../src/config/env.js';
+import { validateProductionEnv, isOriginAllowed } from '../src/config/env.js';
 
 suite('Pre-Deployment Storage & Security Audit Tests', () => {
 
@@ -240,5 +240,23 @@ suite('Pre-Deployment Storage & Security Audit Tests', () => {
         return true;
       }
     );
+  });
+
+  // 4. Origin Matching & Cloud URL Compatibility
+  test('isOriginAllowed permits Vercel deployments automatically', () => {
+    assert.strictEqual(isOriginAllowed('https://shiksha-samiti.vercel.app'), true);
+    assert.strictEqual(isOriginAllowed('https://siksha-samiti-1-git-main.vercel.app'), true);
+    assert.strictEqual(isOriginAllowed('https://my-exam-portal-abc123.vercel.app/'), true); // trailing slash
+  });
+
+  test('isOriginAllowed permits localhost development', () => {
+    assert.strictEqual(isOriginAllowed('http://localhost:5173'), true);
+    assert.strictEqual(isOriginAllowed('http://localhost:5174/'), true);
+    assert.strictEqual(isOriginAllowed('http://127.0.0.1:3000'), true);
+  });
+
+  test('isOriginAllowed rejects arbitrary untrusted external origins', () => {
+    assert.strictEqual(isOriginAllowed('https://untrusted-malicious-site.com'), false);
+    assert.strictEqual(isOriginAllowed('https://evil-hacker.org'), false);
   });
 });
